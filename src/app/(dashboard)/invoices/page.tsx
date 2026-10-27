@@ -1,91 +1,79 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
+  AlertCircle,
+  Calendar,
+  CheckCircle2,
   ChevronDown,
+  Clock,
   Download,
   Eye,
   FilePlus2,
+  Filter,
   MoreHorizontal,
   Search,
+  Store,
+  Trash2,
 } from "lucide-react";
-import { useState } from "react";
-
-const invoices = [
-  {
-    id: "INV-1024",
-    customer: "Urban Living Co.",
-    date: "Oct 18, 2026",
-    dueDate: "Nov 17, 2026",
-    amount: "$4,280.00",
-    status: "Paid",
-  },
-  {
-    id: "INV-1023",
-    customer: "Modern Home LLC",
-    date: "Oct 17, 2026",
-    dueDate: "Nov 16, 2026",
-    amount: "$2,850.00",
-    status: "Pending",
-  },
-  {
-    id: "INV-1022",
-    customer: "Oak & Stone",
-    date: "Oct 16, 2026",
-    dueDate: "Nov 15, 2026",
-    amount: "$6,420.00",
-    status: "Paid",
-  },
-  {
-    id: "INV-1021",
-    customer: "Casa Interiors",
-    date: "Oct 15, 2026",
-    dueDate: "Nov 14, 2026",
-    amount: "$1,980.00",
-    status: "Overdue",
-  },
-  {
-    id: "INV-1020",
-    customer: "Haven & Co.",
-    date: "Oct 14, 2026",
-    dueDate: "Nov 13, 2026",
-    amount: "$3,740.00",
-    status: "Paid",
-  },
-  {
-    id: "INV-1019",
-    customer: "The Home Studio",
-    date: "Oct 13, 2026",
-    dueDate: "Nov 12, 2026",
-    amount: "$5,125.00",
-    status: "Pending",
-  },
-  {
-    id: "INV-1018",
-    customer: "North Oak Interiors",
-    date: "Oct 12, 2026",
-    dueDate: "Nov 11, 2026",
-    amount: "$2,460.00",
-    status: "Paid",
-  },
-];
-
-const statusOptions = ["All", "Paid", "Pending", "Overdue"];
+import { initialInvoices } from "@/features/invoices/invoice.data";
+import type { Invoice, InvoicePaymentStatus, InvoiceStatus } from "@/features/invoices/invoice.types";
 
 export default function InvoicesPage() {
+  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("All");
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [paymentFilter, setPaymentFilter] = useState<string>("ALL");
+  const [channelFilter, setChannelFilter] = useState<string>("ALL");
 
-  const filteredInvoices = invoices.filter((invoice) => {
+  // Summary statistics calculated from active mock data
+  const totalCount = invoices.length;
+  const totalValue = invoices.reduce((sum, inv) => sum + inv.grandTotal, 0);
+
+  const paidInvoices = invoices.filter((inv) => inv.paymentStatus === "PAID");
+  const totalPaid = paidInvoices.reduce((sum, inv) => sum + inv.amountPaid, 0);
+
+  const pendingInvoices = invoices.filter(
+    (inv) => inv.paymentStatus === "PENDING" || inv.paymentStatus === "PARTIALLY_PAID"
+  );
+  const totalPending = pendingInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
+
+  const overdueInvoices = invoices.filter((inv) => inv.paymentStatus === "OVERDUE");
+  const totalOverdue = overdueInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
+
+  // Channels for filter
+  const channels = Array.from(new Set(invoices.map((inv) => inv.salesChannelName)));
+
+  const filteredInvoices = invoices.filter((inv) => {
     const matchesSearch =
-      invoice.id.toLowerCase().includes(search.toLowerCase()) ||
-      invoice.customer.toLowerCase().includes(search.toLowerCase());
+      inv.invoiceNumber.toLowerCase().includes(search.toLowerCase()) ||
+      inv.buyerName.toLowerCase().includes(search.toLowerCase()) ||
+      (inv.externalOrderId && inv.externalOrderId.toLowerCase().includes(search.toLowerCase()));
 
-    const matchesStatus =
-      status === "All" || invoice.status === status;
+    const matchesStatus = statusFilter === "ALL" || inv.status === statusFilter;
+    const matchesPayment = paymentFilter === "ALL" || inv.paymentStatus === paymentFilter;
+    const matchesChannel = channelFilter === "ALL" || inv.salesChannelName === channelFilter;
 
-    return matchesSearch && matchesStatus;
+    return matchesSearch && matchesStatus && matchesPayment && matchesChannel;
   });
+
+  const handleDownloadInvoice = (invoiceId: number) => {
+    // AUTHORIZED LOCATION 1 OF 2:
+    // Opens the invoice printable view and triggers browser PDF save/print
+    const printWindow = window.open(`/invoices/view/${invoiceId}?print=true`, "_blank");
+    if (printWindow) {
+      printWindow.focus();
+    }
+  };
+
+  const handleCancelInvoice = (id: number, invNum: string) => {
+    if (confirm(`Are you sure you want to cancel invoice ${invNum}? This will void billing and reverse any inventory reservations.`)) {
+      setInvoices((prev) =>
+        prev.map((inv) => (inv.id === id ? { ...inv, status: "CANCELLED" as InvoiceStatus } : inv))
+      );
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -93,15 +81,13 @@ export default function InvoicesPage() {
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
           <p className="text-sm font-medium text-[var(--primary)]">
-            Operations
+            Billing & Receivables
           </p>
-
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-[var(--foreground)]">
-            Invoices
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-[var(--foreground)]">
+            Sales Invoices
           </h1>
-
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Manage customer invoices and payment status.
+            Manage commercial orders, walk-in receipts, payment status, and order documentation.
           </p>
         </div>
 
@@ -110,131 +96,236 @@ export default function InvoicesPage() {
           className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary-dark)]"
         >
           <FilePlus2 size={17} strokeWidth={1.8} />
-          Create invoice
+          <span>Create Invoice</span>
         </Link>
       </div>
 
-      {/* Summary */}
+      {/* Summary KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
-          label="Total invoices"
-          value="128"
-          description="This month"
+          label="Total Billed"
+          value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+          description={`${totalCount} commercial invoices`}
+          badge="Gross"
         />
-
         <SummaryCard
-          label="Paid"
-          value="$38,420"
-          description="78 invoices"
+          label="Collected Payments"
+          value={`$${totalPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+          description={`${paidInvoices.length} fully paid invoices`}
+          badge="Received"
+          badgeColor="text-emerald-700 bg-emerald-50"
         />
-
         <SummaryCard
-          label="Pending"
-          value="$8,540"
-          description="18 invoices"
+          label="Outstanding / Due"
+          value={`$${totalPending.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+          description={`${pendingInvoices.length} invoices pending`}
+          badge="Receivables"
+          badgeColor="text-amber-700 bg-amber-50"
         />
-
         <SummaryCard
-          label="Overdue"
-          value="$4,140"
-          description="7 invoices"
+          label="Overdue Receivables"
+          value={`$${totalOverdue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+          description={`${overdueInvoices.length} invoices past due`}
+          badge="Attention"
+          badgeColor="text-rose-700 bg-rose-50"
         />
       </div>
 
-      {/* Invoice table */}
+      {/* Main Table Card */}
       <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white shadow-sm">
-        {/* Filters */}
+        {/* Filters Header */}
         <div className="flex flex-col gap-3 border-b border-[var(--border-light)] p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-sm">
+          <div className="relative w-full sm:max-w-md">
             <Search
               size={17}
               strokeWidth={1.8}
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
             />
-
             <input
               type="search"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search invoice or customer..."
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by invoice #, buyer, or channel order ref..."
               className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--muted-background)] pl-9 pr-3 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--primary)] focus:bg-white"
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Status filter */}
             <div className="relative">
               <select
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-                className="h-10 appearance-none rounded-xl border border-[var(--border)] bg-white pl-3 pr-9 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="h-10 appearance-none rounded-xl border border-[var(--border)] bg-white pl-3 pr-8 text-xs font-medium text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
               >
-                {statusOptions.map((option) => (
-                  <option key={option}>{option}</option>
+                <option value="ALL">All Statuses</option>
+                <option value="ISSUED">Issued</option>
+                <option value="DRAFT">Draft</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+              />
+            </div>
+
+            {/* Payment filter */}
+            <div className="relative">
+              <select
+                value={paymentFilter}
+                onChange={(e) => setPaymentFilter(e.target.value)}
+                className="h-10 appearance-none rounded-xl border border-[var(--border)] bg-white pl-3 pr-8 text-xs font-medium text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
+              >
+                <option value="ALL">All Payments</option>
+                <option value="PAID">Paid</option>
+                <option value="PARTIALLY_PAID">Partially Paid</option>
+                <option value="PENDING">Pending</option>
+                <option value="OVERDUE">Overdue</option>
+              </select>
+              <ChevronDown
+                size={14}
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+              />
+            </div>
+
+            {/* Channel filter */}
+            <div className="relative">
+              <select
+                value={channelFilter}
+                onChange={(e) => setChannelFilter(e.target.value)}
+                className="h-10 appearance-none rounded-xl border border-[var(--border)] bg-white pl-3 pr-8 text-xs font-medium text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
+              >
+                <option value="ALL">All Channels</option>
+                {channels.map((ch) => (
+                  <option key={ch} value={ch}>
+                    {ch}
+                  </option>
                 ))}
               </select>
-
               <ChevronDown
-                size={15}
-                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+                size={14}
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]"
               />
             </div>
           </div>
         </div>
 
-        {/* Table */}
+        {/* Invoices Table */}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[850px] text-sm">
+          <table className="w-full min-w-[950px] text-sm">
             <thead>
               <tr className="border-b border-[var(--border-light)] bg-[var(--muted-background)]/50 text-left">
-                <th className="px-5 py-3 font-medium text-[var(--muted)]">
-                  Invoice
-                </th>
-
-                <th className="px-5 py-3 font-medium text-[var(--muted)]">
-                  Customer
-                </th>
-
-                <th className="px-5 py-3 font-medium text-[var(--muted)]">
-                  Invoice date
-                </th>
-
-                <th className="px-5 py-3 font-medium text-[var(--muted)]">
-                  Due date
-                </th>
-
-                <th className="px-5 py-3 text-right font-medium text-[var(--muted)]">
-                  Amount
-                </th>
-
-                <th className="px-5 py-3 text-right font-medium text-[var(--muted)]">
-                  Status
-                </th>
-
-                <th className="w-12 px-4 py-3" />
+                <th className="px-5 py-3 font-semibold text-[var(--muted)]">Invoice #</th>
+                <th className="px-4 py-3 font-semibold text-[var(--muted)]">Date / Due</th>
+                <th className="px-4 py-3 font-semibold text-[var(--muted)]">Customer / Buyer</th>
+                <th className="px-4 py-3 font-semibold text-[var(--muted)]">Channel</th>
+                <th className="px-4 py-3 text-right font-semibold text-[var(--muted)]">Total</th>
+                <th className="px-4 py-3 text-right font-semibold text-[var(--muted)]">Paid</th>
+                <th className="px-4 py-3 text-right font-semibold text-[var(--muted)]">Balance</th>
+                <th className="px-4 py-3 text-center font-semibold text-[var(--muted)]">Payment</th>
+                <th className="px-4 py-3 text-center font-semibold text-[var(--muted)]">Doc Status</th>
+                <th className="w-28 px-4 py-3 text-center font-semibold text-[var(--muted)]">Actions</th>
               </tr>
             </thead>
 
             <tbody>
               {filteredInvoices.length > 0 ? (
-                filteredInvoices.map((invoice) => (
-                  <InvoiceRow
-                    key={invoice.id}
-                    invoice={invoice}
-                  />
+                filteredInvoices.map((inv) => (
+                  <tr
+                    key={inv.id}
+                    className="border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--muted-background)]/50 transition-colors"
+                  >
+                    <td className="px-5 py-4">
+                      <Link
+                        href={`/invoices/view/${inv.id}`}
+                        className="font-mono font-semibold text-[var(--primary)] hover:underline"
+                      >
+                        {inv.invoiceNumber}
+                      </Link>
+                      {inv.quotationId && (
+                        <p className="text-[11px] text-[var(--muted)]">from QT-{inv.quotationId}</p>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-4 text-xs">
+                      <p className="font-medium text-[var(--foreground)]">{inv.invoiceDate}</p>
+                      <p className="text-[var(--muted)]">Due {inv.dueDate}</p>
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <p className="font-medium text-[var(--foreground)]">{inv.buyerName}</p>
+                      {inv.buyerEmail && (
+                        <p className="text-xs text-[var(--muted)]">{inv.buyerEmail}</p>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-4 text-xs font-medium text-[var(--foreground)]">
+                      <span className="inline-flex items-center gap-1.5 rounded-lg bg-[var(--muted-background)] px-2 py-1">
+                        <Store size={12} className="text-[var(--muted)]" />
+                        {inv.salesChannelName}
+                      </span>
+                    </td>
+
+                    <td className="px-4 py-4 text-right font-semibold text-[var(--foreground)]">
+                      ${inv.grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    </td>
+
+                    <td className="px-4 py-4 text-right text-xs font-medium text-emerald-700">
+                      ${inv.amountPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    </td>
+
+                    <td className="px-4 py-4 text-right text-xs font-bold text-amber-700">
+                      ${inv.balanceDue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                    </td>
+
+                    <td className="px-4 py-4 text-center">
+                      <PaymentStatusBadge status={inv.paymentStatus} />
+                    </td>
+
+                    <td className="px-4 py-4 text-center">
+                      <InvoiceStatusBadge status={inv.status} />
+                    </td>
+
+                    <td className="px-4 py-4 text-right">
+                      <div className="flex items-center justify-center gap-1">
+                        {/* View action */}
+                        <Link
+                          href={`/invoices/view/${inv.id}`}
+                          title="View invoice details"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--primary)] hover:bg-white hover:text-[var(--primary)]"
+                        >
+                          <Eye size={15} />
+                        </Link>
+
+                        {/* AUTHORIZED LOCATION 1 OF 2: Download Invoice Action in Table Row */}
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadInvoice(inv.id)}
+                          title="Download Invoice PDF"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--primary)] hover:bg-white hover:text-[var(--primary)]"
+                        >
+                          <Download size={15} />
+                        </button>
+
+                        {inv.status !== "CANCELLED" && (
+                          <button
+                            type="button"
+                            onClick={() => handleCancelInvoice(inv.id, inv.invoiceNumber)}
+                            title="Cancel invoice"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-[var(--muted)] transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-5 py-12 text-center"
-                  >
-                    <p className="text-sm font-medium text-[var(--foreground)]">
-                      No invoices found
-                    </p>
-
-                    <p className="mt-1 text-xs text-[var(--muted)]">
-                      Try changing your search or status filter.
-                    </p>
+                  <td colSpan={10} className="px-5 py-12 text-center">
+                    <p className="text-sm font-medium text-[var(--foreground)]">No invoices match your filters</p>
+                    <p className="mt-1 text-xs text-[var(--muted)]">Try adjusting your search query, status or channel filter.</p>
                   </td>
                 </tr>
               )}
@@ -247,10 +338,7 @@ export default function InvoicesPage() {
           <span>
             Showing {filteredInvoices.length} of {invoices.length} invoices
           </span>
-
-          <span>
-            Page 1 of 1
-          </span>
+          <span>Commercial ERP Billing System</span>
         </div>
       </section>
     </div>
@@ -261,114 +349,54 @@ function SummaryCard({
   label,
   value,
   description,
+  badge,
+  badgeColor = "text-[var(--primary)] bg-[var(--primary-light)]",
 }: {
   label: string;
   value: string;
   description: string;
+  badge: string;
+  badgeColor?: string;
 }) {
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm">
-      <p className="text-sm font-medium text-[var(--muted)]">
-        {label}
-      </p>
-
-      <p className="mt-3 text-2xl font-semibold tracking-tight text-[var(--foreground)]">
-        {value}
-      </p>
-
-      <p className="mt-1 text-xs text-[var(--muted)]">
-        {description}
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">{label}</p>
+        <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${badgeColor}`}>
+          {badge}
+        </span>
+      </div>
+      <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--foreground)]">{value}</p>
+      <p className="mt-1 text-xs text-[var(--muted)]">{description}</p>
     </div>
   );
 }
 
-function InvoiceRow({
-  invoice,
-}: {
-  invoice: (typeof invoices)[number];
-}) {
-  return (
-    <tr className="border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--muted-background)]/60">
-      <td className="px-5 py-4">
-        <Link
-          href={`/invoices/${invoice.id}`}
-          className="font-medium text-[var(--primary)] hover:underline"
-        >
-          {invoice.id}
-        </Link>
-      </td>
-
-      <td className="px-5 py-4 font-medium text-[var(--foreground)]">
-        {invoice.customer}
-      </td>
-
-      <td className="px-5 py-4 text-[var(--muted)]">
-        {invoice.date}
-      </td>
-
-      <td className="px-5 py-4 text-[var(--muted)]">
-        {invoice.dueDate}
-      </td>
-
-      <td className="px-5 py-4 text-right font-medium text-[var(--foreground)]">
-        {invoice.amount}
-      </td>
-
-      <td className="px-5 py-4 text-right">
-        <StatusBadge status={invoice.status} />
-      </td>
-
-      <td className="px-4 py-4 text-right">
-        <div className="flex items-center justify-end gap-1">
-          <button
-            type="button"
-            title="View invoice"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-white hover:text-[var(--primary)]"
-          >
-            <Eye size={16} strokeWidth={1.8} />
-          </button>
-
-          <button
-            type="button"
-            title="Download invoice"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-white hover:text-[var(--primary)]"
-          >
-            <Download size={16} strokeWidth={1.8} />
-          </button>
-
-          <button
-            type="button"
-            title="More actions"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-white hover:text-[var(--foreground)]"
-          >
-            <MoreHorizontal size={17} strokeWidth={1.8} />
-          </button>
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-function StatusBadge({
-  status,
-}: {
-  status: string;
-}) {
-  const styles = {
-    Paid: "bg-[var(--primary-light)] text-[var(--primary)]",
-    Pending: "bg-amber-50 text-amber-700",
-    Overdue: "bg-red-50 text-red-600",
+function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
+  const styles: Record<InvoiceStatus, string> = {
+    ISSUED: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    DRAFT: "bg-amber-50 text-amber-700 border-amber-200",
+    CANCELLED: "bg-rose-50 text-rose-700 border-rose-200",
   };
 
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-        styles[status as keyof typeof styles]
-      }`}
-    >
-      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${styles[status]}`}>
       {status}
+    </span>
+  );
+}
+
+function PaymentStatusBadge({ status }: { status: InvoicePaymentStatus }) {
+  const styles: Record<InvoicePaymentStatus, string> = {
+    PAID: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    PARTIALLY_PAID: "bg-blue-50 text-blue-700 border-blue-200",
+    PENDING: "bg-amber-50 text-amber-700 border-amber-200",
+    OVERDUE: "bg-rose-50 text-rose-700 border-rose-200",
+  };
+
+  return (
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${styles[status]}`}>
+      {status.replace("_", " ")}
     </span>
   );
 }

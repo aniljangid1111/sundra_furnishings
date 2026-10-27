@@ -1,0 +1,7 @@
+# Vercel deployment ignore rules
+.git
+.github
+*.log
+scratch/
+C:/Users/
+.agents

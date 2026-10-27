@@ -1,0 +1,43 @@
+import type { Warehouse } from "./warehouse.types";
+
+export const warehouses: Warehouse[] = [
+  {
+    id: 1,
+    warehouseCode: "WH-01",
+    name: "Central Distribution Center (CDC)",
+    address: "4800 E 48th Ave, Bay 6",
+    city: "Denver",
+    state: "CO",
+    postalCode: "80216",
+    country: "United States",
+    status: "ACTIVE",
+    notes: "Main cross-docking and inventory storage hub for solid wood dining and living furniture.",
+    createdAt: "2026-01-01T08:00:00Z",
+  },
+  {
+    id: 2,
+    warehouseCode: "WH-02",
+    name: "East Coast Logistics Hub",
+    address: "100 Northern Ave, Berth 4",
+    city: "Boston",
+    state: "MA",
+    postalCode: "02210",
+    country: "United States",
+    status: "ACTIVE",
+    notes: "Serving Northeast residential orders, designer direct shipments, and retail replenishment.",
+    createdAt: "2026-02-15T09:00:00Z",
+  },
+  {
+    id: 3,
+    warehouseCode: "WH-03",
+    name: "West Coast Fulfillment Center",
+    address: "3200 Airport Way S, Dock 12",
+    city: "Seattle",
+    state: "WA",
+    postalCode: "98134",
+    country: "United States",
+    status: "ACTIVE",
+    notes: "Specialized in lighting fixtures, textiles, bedding stock, and imported decor accessories.",
+    createdAt: "2026-03-20T10:00:00Z",
+  },
+];
