@@ -1,0 +1,60 @@
+import type { Category } from "./category.types";
+
+export const categories: Category[] = [
+  {
+    id: 1,
+    name: "Furniture",
+    code: "FUR",
+    description: "Furniture products including chairs, tables and consoles.",
+    productCount: 3,
+    status: "ACTIVE",
+  },
+  {
+    id: 2,
+    name: "Bedding",
+    code: "BED",
+    description: "Bedsheets, bedding sets and related products.",
+    productCount: 1,
+    status: "ACTIVE",
+  },
+  {
+    id: 3,
+    name: "Home Decor",
+    code: "DEC",
+    description: "Decorative products and accessories for the home.",
+    productCount: 1,
+    status: "ACTIVE",
+  },
+  {
+    id: 4,
+    name: "Lighting",
+    code: "LGT",
+    description: "Floor lamps, table lamps and other lighting products.",
+    productCount: 1,
+    status: "ACTIVE",
+  },
+  {
+    id: 5,
+    name: "Rugs",
+    code: "RUG",
+    description: "Area rugs and decorative floor coverings.",
+    productCount: 0,
+    status: "ACTIVE",
+  },
+  {
+    id: 6,
+    name: "Dining",
+    code: "DIN",
+    description: "Dining tables, chairs and related dining products.",
+    productCount: 0,
+    status: "ACTIVE",
+  },
+  {
+    id: 7,
+    name: "Outdoor",
+    code: "OUT",
+    description: "Outdoor furniture and accessories.",
+    productCount: 0,
+    status: "INACTIVE",
+  },
+];
