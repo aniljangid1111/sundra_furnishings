@@ -1,5 +1,3 @@
-export const instant = false;
-
 import { notFound } from "next/navigation";
 import { ProductForm } from "@/features/products/product-form";
 import { products } from "@/features/products/product.data";

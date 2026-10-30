@@ -26,6 +26,7 @@ export interface Purchase {
   purchaseDate: string;
   expectedDate?: string;
   supplierInvoiceNumber?: string;
+  containerNumber?: string;
   warehouseId: number;
   warehouseName: string;
   status: PurchaseStatus;

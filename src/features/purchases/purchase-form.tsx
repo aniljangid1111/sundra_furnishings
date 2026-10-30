@@ -32,7 +32,7 @@ export function PurchaseForm({ mode, purchase }: PurchaseFormProps) {
 
   const [purchaseNumber, setPurchaseNumber] = useState(
     purchase?.purchaseNumber ??
-      `PO-2026-00${Math.floor(Math.random() * 90 + 10)}`,
+    `PO-2026-00${Math.floor(Math.random() * 90 + 10)}`,
   );
   const [supplierId, setSupplierId] = useState<number>(
     purchase?.supplierId ?? (suppliers[0]?.id || 1),
@@ -45,6 +45,9 @@ export function PurchaseForm({ mode, purchase }: PurchaseFormProps) {
   );
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState(
     purchase?.supplierInvoiceNumber ?? "",
+  );
+  const [containerNumber, setContainerNumber] = useState(
+    purchase?.containerNumber ?? "",
   );
   const [warehouseId, setWarehouseId] = useState<number>(
     purchase?.warehouseId ?? (warehouses[0]?.id || 1),
@@ -226,6 +229,7 @@ export function PurchaseForm({ mode, purchase }: PurchaseFormProps) {
       purchaseDate,
       expectedDate,
       supplierInvoiceNumber: supplierInvoiceNumber.trim(),
+      containerNumber: containerNumber.trim(),
       warehouseId: Number(warehouseId),
       warehouseName: selectedWarehouse?.name || "Main Warehouse",
       status,
@@ -274,24 +278,6 @@ export function PurchaseForm({ mode, purchase }: PurchaseFormProps) {
                 : "Procure inventory from authorized suppliers into destination warehouses."}
             </p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Link
-            href="/purchases"
-            className="inline-flex h-10 items-center justify-center rounded-lg border border-[var(--border)] bg-white px-4 text-sm font-medium transition hover:bg-[var(--muted-background)]"
-          >
-            Cancel
-          </Link>
-
-          <button
-            type="submit"
-            form="purchase-form"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition hover:bg-[var(--primary-dark)]"
-          >
-            <Save size={16} />
-            {isEdit ? "Save Changes" : "Save Purchase Order"}
-          </button>
         </div>
       </div>
 
@@ -373,7 +359,7 @@ export function PurchaseForm({ mode, purchase }: PurchaseFormProps) {
 
             <div>
               <label className="mb-1.5 block text-sm font-medium" htmlFor="purchase-date">
-                Order Date <span className="text-[var(--danger)]">*</span>
+                Invoice Date <span className="text-[var(--danger)]">*</span>
               </label>
               <input
                 id="purchase-date"
@@ -387,7 +373,7 @@ export function PurchaseForm({ mode, purchase }: PurchaseFormProps) {
 
             <div>
               <label className="mb-1.5 block text-sm font-medium" htmlFor="expected-date">
-                Expected Delivery Date
+                Inward Date
               </label>
               <input
                 id="expected-date"
@@ -408,6 +394,19 @@ export function PurchaseForm({ mode, purchase }: PurchaseFormProps) {
                 value={supplierInvoiceNumber}
                 onChange={(e) => setSupplierInvoiceNumber(e.target.value)}
                 placeholder="e.g. INV-AHM-9821"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-sm font-medium" htmlFor="container-number">
+                Container No.
+              </label>
+              <input
+                id="container-number"
+                className="form-input"
+                value={containerNumber}
+                onChange={(e) => setContainerNumber(e.target.value)}
+                placeholder="e.g. MSCU-726194-2"
               />
             </div>
           </div>
@@ -433,7 +432,7 @@ export function PurchaseForm({ mode, purchase }: PurchaseFormProps) {
               onClick={addItem}
               className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)]"
             >
-              <Plus size={14} /> Add Product
+              <Plus size={14} />
             </button>
           </div>
 
@@ -678,7 +677,7 @@ export function PurchaseForm({ mode, purchase }: PurchaseFormProps) {
 
           <button
             type="submit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white transition hover:bg-[var(--primary-dark)]"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
           >
             <Save size={16} />
             {isEdit ? "Save Changes" : "Save Purchase Order"}

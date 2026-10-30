@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
   Area,
@@ -110,6 +111,17 @@ const salesData = [
 ];
 
 export default function DashboardPage() {
+  const [timeRange, setTimeRange] = useState<"TODAY" | "7D" | "30D" | "ALL">("30D");
+
+  const dynamicSales = timeRange === "TODAY" ? "$2,410" : timeRange === "7D" ? "$13,510" : timeRange === "30D" ? "$48,250" : "$183,350";
+  const dynamicProfit = timeRange === "TODAY" ? "$1,320" : timeRange === "7D" ? "$7,390" : timeRange === "30D" ? "$26,410" : "$100,320";
+
+  const currentStats = stats.map((s) => {
+    if (s.title === "Total Sales") return { ...s, value: dynamicSales, description: timeRange === "TODAY" ? "today billing" : s.description };
+    if (s.title === "Gross Profit") return { ...s, value: dynamicProfit, description: timeRange === "TODAY" ? "today margin" : s.description };
+    return s;
+  });
+
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -128,17 +140,58 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          className="h-10 w-fit rounded-xl border border-[var(--border)] bg-white px-4 text-sm font-medium text-[var(--foreground)] shadow-sm transition hover:border-[var(--primary)] hover:bg-[var(--primary-light)]"
-        >
-          October 2026
-        </button>
+        {/* Clean Time Filter Pills */}
+        <div className="inline-flex rounded-xl border border-[var(--border)] bg-white p-1 text-xs font-medium shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setTimeRange("TODAY")}
+            className={`rounded-lg px-3 py-1.5 transition ${
+              timeRange === "TODAY"
+                ? "bg-[var(--primary)] text-white! shadow-xs"
+                : "text-[var(--muted)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            onClick={() => setTimeRange("7D")}
+            className={`rounded-lg px-3 py-1.5 transition ${
+              timeRange === "7D"
+                ? "bg-[var(--primary)] text-white! shadow-xs"
+                : "text-[var(--muted)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            Last 7 Days
+          </button>
+          <button
+            type="button"
+            onClick={() => setTimeRange("30D")}
+            className={`rounded-lg px-3 py-1.5 transition ${
+              timeRange === "30D"
+                ? "bg-[var(--primary)] text-white! shadow-xs"
+                : "text-[var(--muted)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            Last 30 Days
+          </button>
+          <button
+            type="button"
+            onClick={() => setTimeRange("ALL")}
+            className={`rounded-lg px-3 py-1.5 transition ${
+              timeRange === "ALL"
+                ? "bg-[var(--primary)] text-white! shadow-xs"
+                : "text-[var(--muted)] hover:text-[var(--foreground)]"
+            }`}
+          >
+            All Time
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((stat) => (
+        {currentStats.map((stat) => (
           <div
             key={stat.title}
             className="group rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"

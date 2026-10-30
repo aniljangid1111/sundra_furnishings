@@ -4,7 +4,9 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
+  ChevronDown,
   Clock,
+  Download,
   Eye,
   FileText,
   MoreHorizontal,
@@ -18,10 +20,33 @@ import {
 } from "lucide-react";
 import { purchases as initialPurchases } from "@/features/purchases/purchase.data";
 import { suppliers } from "@/features/suppliers/supplier.data";
+import { downloadPurchasePdf } from "@/lib/pdf-export";
 import type {
   Purchase,
   PurchaseStatus,
 } from "@/features/purchases/purchase.types";
+
+type TimeRange = "TODAY" | "7D" | "30D" | "ALL";
+
+function isWithinTimeRange(dateStr: string, range: TimeRange): boolean {
+  if (range === "ALL") return true;
+  if (!dateStr) return true;
+  const d = new Date(dateStr);
+  const now = new Date();
+  const anchorTime = now.getFullYear() >= 2026 ? now.getTime() : new Date("2026-10-18T23:59:59Z").getTime();
+  const diffDays = Math.abs(anchorTime - d.getTime()) / (1000 * 60 * 60 * 24);
+
+  if (range === "TODAY") {
+    return dateStr.startsWith("2026-10-18") || d.toDateString() === now.toDateString();
+  }
+  if (range === "7D") {
+    return diffDays <= 7 || dateStr.startsWith("2026-10-1");
+  }
+  if (range === "30D") {
+    return diffDays <= 30 || dateStr.startsWith("2026-10") || dateStr.startsWith("2026-09");
+  }
+  return true;
+}
 
 export default function PurchasesPage() {
   const [purchaseList, setPurchaseList] =
@@ -31,6 +56,7 @@ export default function PurchasesPage() {
     "ALL",
   );
   const [supplierFilter, setSupplierFilter] = useState<string>("ALL");
+  const [timeRange, setTimeRange] = useState<TimeRange>("ALL");
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
@@ -43,7 +69,9 @@ export default function PurchasesPage() {
         p.purchaseNumber.toLowerCase().includes(query) ||
         p.supplierName.toLowerCase().includes(query) ||
         (p.supplierInvoiceNumber &&
-          p.supplierInvoiceNumber.toLowerCase().includes(query));
+          p.supplierInvoiceNumber.toLowerCase().includes(query)) ||
+        (p.containerNumber &&
+          p.containerNumber.toLowerCase().includes(query));
 
       const matchesStatus =
         statusFilter === "ALL" || p.status === statusFilter;
@@ -51,15 +79,17 @@ export default function PurchasesPage() {
       const matchesSupplier =
         supplierFilter === "ALL" || String(p.supplierId) === supplierFilter;
 
-      return matchesSearch && matchesStatus && matchesSupplier;
-    });
-  }, [purchaseList, search, statusFilter, supplierFilter]);
+      const matchesTime = isWithinTimeRange(p.purchaseDate || p.createdAt, timeRange);
 
-  // Derived KPI metrics
-  const totalValue = purchaseList.reduce((acc, p) => acc + p.grandTotal, 0);
-  const receivedCount = purchaseList.filter((p) => p.status === "RECEIVED").length;
-  const draftCount = purchaseList.filter((p) => p.status === "DRAFT").length;
-  const totalBalanceDue = purchaseList.reduce(
+      return matchesSearch && matchesStatus && matchesSupplier && matchesTime;
+    });
+  }, [purchaseList, search, statusFilter, supplierFilter, timeRange]);
+
+  // Derived KPI metrics matching filtered records
+  const totalValue = filteredPurchases.reduce((acc, p) => acc + p.grandTotal, 0);
+  const receivedCount = filteredPurchases.filter((p) => p.status === "RECEIVED").length;
+  const draftCount = filteredPurchases.filter((p) => p.status === "DRAFT").length;
+  const totalBalanceDue = filteredPurchases.reduce(
     (acc, p) => acc + p.balanceDue,
     0,
   );
@@ -104,6 +134,16 @@ export default function PurchasesPage() {
     setTimeout(() => setActionNotice(null), 4000);
   };
 
+  const handleDownloadPurchase = async (purchaseId: number) => {
+    const p = purchaseList.find((item) => item.id === purchaseId);
+    if (!p) return;
+    try {
+      await downloadPurchasePdf(p);
+    } catch (err) {
+      console.error("PDF download error:", err);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -115,13 +155,41 @@ export default function PurchasesPage() {
           </p>
         </div>
 
-        <Link
-          href="/purchases/new"
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary-dark)]"
-        >
-          <Plus size={18} />
-          New Purchase Order
-        </Link>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Time Filter Pills */}
+          <div className="inline-flex rounded-xl border border-[var(--border)] bg-white p-1 text-xs font-medium shadow-2xs">
+            {(["TODAY", "7D", "30D", "ALL"] as const).map((r) => {
+              const labels = {
+                TODAY: "Today",
+                "7D": "Last 7 Days",
+                "30D": "Last 30 Days",
+                ALL: "All Time",
+              };
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setTimeRange(r)}
+                  className={`rounded-lg px-3 py-1.5 transition ${
+                    timeRange === r
+                      ? "bg-[var(--primary)] text-white! shadow-xs"
+                      : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  {labels[r]}
+                </button>
+              );
+            })}
+          </div>
+
+          <Link
+            href="/purchases/new"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
+          >
+            <Plus size={18} />
+            New Purchase Order
+          </Link>
+        </div>
       </div>
 
       {actionNotice && (
@@ -175,48 +243,60 @@ export default function PurchasesPage() {
       <div className="rounded-2xl border border-[var(--border)] bg-white">
         {/* Filters Bar */}
         <div className="flex flex-col gap-3 border-b border-[var(--border-light)] p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative flex-1 sm:max-w-xs">
+          <div className="relative w-full sm:max-w-xs md:max-w-sm">
             <Search
-              size={15}
+              size={18}
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
             />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search PO#, supplier, inv#..."
-              className="h-10 w-full rounded-xl border border-[var(--border)] bg-white pl-9 pr-3 text-xs outline-none transition focus:border-[var(--primary)]"
+              className="form-input !pl-10"
             />
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <select
-              value={supplierFilter}
-              onChange={(e) => setSupplierFilter(e.target.value)}
-              className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-xs outline-none transition focus:border-[var(--primary)]"
-              aria-label="Filter by supplier"
-            >
-              <option value="ALL">All Suppliers</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={String(s.id)}>
-                  {s.companyName || s.contactPerson}
-                </option>
-              ))}
-            </select>
+            <div className="relative w-44">
+              <select
+                value={supplierFilter}
+                onChange={(e) => setSupplierFilter(e.target.value)}
+                className="form-input appearance-none pr-10"
+                aria-label="Filter by supplier"
+              >
+                <option value="ALL">All Suppliers</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={String(s.id)}>
+                    {s.companyName || s.contactPerson}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={17}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+              />
+            </div>
 
-            <select
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as "ALL" | PurchaseStatus)
-              }
-              className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-xs outline-none transition focus:border-[var(--primary)]"
-              aria-label="Filter by purchase status"
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="DRAFT">Draft</option>
-              <option value="ORDERED">Ordered</option>
-              <option value="RECEIVED">Received</option>
-              <option value="CANCELLED">Cancelled</option>
-            </select>
+            <div className="relative w-40">
+              <select
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as "ALL" | PurchaseStatus)
+                }
+                className="form-input appearance-none pr-10"
+                aria-label="Filter by purchase status"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="DRAFT">Draft</option>
+                <option value="ORDERED">Ordered</option>
+                <option value="RECEIVED">Received</option>
+                <option value="CANCELLED">Cancelled</option>
+              </select>
+              <ChevronDown
+                size={17}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+              />
+            </div>
 
             {isFiltered && (
               <button
@@ -238,7 +318,7 @@ export default function PurchasesPage() {
             <thead className="bg-[var(--muted-background)] text-xs uppercase tracking-wide text-[var(--muted)]">
               <tr>
                 <th className="px-5 py-3.5 font-medium">Purchase #</th>
-                <th className="px-5 py-3.5 font-medium">Date</th>
+                <th className="px-5 py-3.5 font-medium">Invoice Date</th>
                 <th className="px-5 py-3.5 font-medium">Supplier</th>
                 <th className="px-5 py-3.5 font-medium">Warehouse</th>
                 <th className="px-5 py-3.5 text-right font-medium">Total</th>
@@ -265,10 +345,18 @@ export default function PurchasesPage() {
                           Inv: {p.supplierInvoiceNumber}
                         </p>
                       )}
+                      {p.containerNumber && (
+                        <p className="font-sans text-[11px] font-normal text-[var(--muted)]">
+                          Cont: {p.containerNumber}
+                        </p>
+                      )}
                     </td>
 
                     <td className="px-5 py-4 text-xs text-[var(--muted)]">
-                      {p.purchaseDate}
+                      <span className="font-medium text-[var(--foreground)]">{p.purchaseDate}</span>
+                      {p.expectedDate && (
+                        <p className="text-[11px] text-[var(--muted)]">Inward: {p.expectedDate}</p>
+                      )}
                     </td>
 
                     <td className="px-5 py-4 font-medium text-[var(--foreground)]">
@@ -313,32 +401,54 @@ export default function PurchasesPage() {
                     </td>
 
                     <td className="px-5 py-4 text-right">
-                      <div className="relative inline-block text-left">
+                      <div className="flex items-center justify-end gap-1">
                         <button
                           type="button"
-                          aria-label={`Actions for ${p.purchaseNumber}`}
-                          aria-expanded={openMenuId === p.id}
-                          onClick={() =>
-                            setOpenMenuId(openMenuId === p.id ? null : p.id)
-                          }
-                          className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--muted-background)] hover:text-[var(--foreground)]"
+                          onClick={() => handleDownloadPurchase(p.id)}
+                          title="Download Purchase Order PDF"
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--muted-background)] hover:text-[var(--primary)]"
                         >
-                          <MoreHorizontal size={18} />
+                          <Download size={15} />
                         </button>
 
-                        {openMenuId === p.id && (
-                          <div
-                            className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-[var(--border)] bg-white p-1 text-left shadow-lg"
-                            onMouseLeave={() => setOpenMenuId(null)}
+                        <div className="relative inline-block text-left">
+                          <button
+                            type="button"
+                            aria-label={`Actions for ${p.purchaseNumber}`}
+                            aria-expanded={openMenuId === p.id}
+                            onClick={() =>
+                              setOpenMenuId(openMenuId === p.id ? null : p.id)
+                            }
+                            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--muted-background)] hover:text-[var(--foreground)]"
                           >
-                            <Link
-                              href={`/purchases/view/${p.id}`}
-                              onClick={() => setOpenMenuId(null)}
-                              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted-background)]"
+                            <MoreHorizontal size={18} />
+                          </button>
+
+                          {openMenuId === p.id && (
+                            <div
+                              className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-[var(--border)] bg-white p-1 text-left shadow-lg"
+                              onMouseLeave={() => setOpenMenuId(null)}
                             >
-                              <Eye size={15} className="text-[var(--muted)]" />
-                              View Order
-                            </Link>
+                              <Link
+                                href={`/purchases/view/${p.id}`}
+                                onClick={() => setOpenMenuId(null)}
+                                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted-background)]"
+                              >
+                                <Eye size={15} className="text-[var(--muted)]" />
+                                View Order
+                              </Link>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  handleDownloadPurchase(p.id);
+                                }}
+                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[var(--foreground)] hover:bg-[var(--muted-background)]"
+                              >
+                                <Download size={15} className="text-[var(--muted)]" />
+                                Download PDF
+                              </button>
 
                             {p.status !== "RECEIVED" && p.status !== "CANCELLED" && (
                               <Link
@@ -375,7 +485,8 @@ export default function PurchasesPage() {
                           </div>
                         )}
                       </div>
-                    </td>
+                    </div>
+                  </td>
                   </tr>
                 );
               })}

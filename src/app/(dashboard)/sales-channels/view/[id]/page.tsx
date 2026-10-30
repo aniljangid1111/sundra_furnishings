@@ -53,7 +53,7 @@ export default async function ViewSalesChannelPage({
 
         <Link
           href={`/sales-channels/edit/${channel.id}`}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white hover:bg-[var(--primary-dark)]"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! hover:bg-[var(--primary-dark)]"
         >
           <Pencil size={16} />
           Edit Channel

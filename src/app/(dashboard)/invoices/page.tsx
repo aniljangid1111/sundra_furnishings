@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Clock,
   Download,
+  Edit3,
   Eye,
   FilePlus2,
   Filter,
@@ -19,6 +20,29 @@ import {
 } from "lucide-react";
 import { initialInvoices } from "@/features/invoices/invoice.data";
 import type { Invoice, InvoicePaymentStatus, InvoiceStatus } from "@/features/invoices/invoice.types";
+import { downloadInvoicePdf } from "@/lib/pdf-export";
+
+type TimeRange = "TODAY" | "7D" | "30D" | "ALL";
+
+function isWithinTimeRange(dateStr: string, range: TimeRange): boolean {
+  if (range === "ALL") return true;
+  if (!dateStr) return true;
+  const d = new Date(dateStr);
+  const now = new Date();
+  const anchorTime = now.getFullYear() >= 2026 ? now.getTime() : new Date("2026-10-18T23:59:59Z").getTime();
+  const diffDays = Math.abs(anchorTime - d.getTime()) / (1000 * 60 * 60 * 24);
+
+  if (range === "TODAY") {
+    return dateStr.startsWith("2026-10-18") || d.toDateString() === now.toDateString();
+  }
+  if (range === "7D") {
+    return diffDays <= 7 || dateStr.startsWith("2026-10-1");
+  }
+  if (range === "30D") {
+    return diffDays <= 30 || dateStr.startsWith("2026-10") || dateStr.startsWith("2026-09");
+  }
+  return true;
+}
 
 export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
@@ -26,25 +50,12 @@ export default function InvoicesPage() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [paymentFilter, setPaymentFilter] = useState<string>("ALL");
   const [channelFilter, setChannelFilter] = useState<string>("ALL");
-
-  // Summary statistics calculated from active mock data
-  const totalCount = invoices.length;
-  const totalValue = invoices.reduce((sum, inv) => sum + inv.grandTotal, 0);
-
-  const paidInvoices = invoices.filter((inv) => inv.paymentStatus === "PAID");
-  const totalPaid = paidInvoices.reduce((sum, inv) => sum + inv.amountPaid, 0);
-
-  const pendingInvoices = invoices.filter(
-    (inv) => inv.paymentStatus === "PENDING" || inv.paymentStatus === "PARTIALLY_PAID"
-  );
-  const totalPending = pendingInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
-
-  const overdueInvoices = invoices.filter((inv) => inv.paymentStatus === "OVERDUE");
-  const totalOverdue = overdueInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
-
+  const [timeRange, setTimeRange] = useState<TimeRange>("ALL");
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   // Channels for filter
   const channels = Array.from(new Set(invoices.map((inv) => inv.salesChannelName)));
 
+  // Filtered invoices based on search, status, channel, and time range
   const filteredInvoices = invoices.filter((inv) => {
     const matchesSearch =
       inv.invoiceNumber.toLowerCase().includes(search.toLowerCase()) ||
@@ -54,16 +65,33 @@ export default function InvoicesPage() {
     const matchesStatus = statusFilter === "ALL" || inv.status === statusFilter;
     const matchesPayment = paymentFilter === "ALL" || inv.paymentStatus === paymentFilter;
     const matchesChannel = channelFilter === "ALL" || inv.salesChannelName === channelFilter;
+    const matchesTime = isWithinTimeRange(inv.invoiceDate, timeRange);
 
-    return matchesSearch && matchesStatus && matchesPayment && matchesChannel;
+    return matchesSearch && matchesStatus && matchesPayment && matchesChannel && matchesTime;
   });
 
-  const handleDownloadInvoice = (invoiceId: number) => {
-    // AUTHORIZED LOCATION 1 OF 2:
-    // Opens the invoice printable view and triggers browser PDF save/print
-    const printWindow = window.open(`/invoices/view/${invoiceId}?print=true`, "_blank");
-    if (printWindow) {
-      printWindow.focus();
+  // Summary statistics calculated from active time-filtered data
+  const totalCount = filteredInvoices.length;
+  const totalValue = filteredInvoices.reduce((sum, inv) => sum + inv.grandTotal, 0);
+
+  const paidInvoices = filteredInvoices.filter((inv) => inv.paymentStatus === "PAID");
+  const totalPaid = paidInvoices.reduce((sum, inv) => sum + inv.amountPaid, 0);
+
+  const pendingInvoices = filteredInvoices.filter(
+    (inv) => inv.paymentStatus === "PENDING" || inv.paymentStatus === "PARTIALLY_PAID"
+  );
+  const totalPending = pendingInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
+
+  const overdueInvoices = filteredInvoices.filter((inv) => inv.paymentStatus === "OVERDUE");
+  const totalOverdue = overdueInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
+
+  const handleDownloadInvoice = async (invoiceId: number) => {
+    const inv = invoices.find((item) => item.id === invoiceId);
+    if (!inv) return;
+    try {
+      await downloadInvoicePdf(inv);
+    } catch (err) {
+      console.error("Invoice PDF download error:", err);
     }
   };
 
@@ -91,13 +119,41 @@ export default function InvoicesPage() {
           </p>
         </div>
 
-        <Link
-          href="/invoices/new"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary-dark)]"
-        >
-          <FilePlus2 size={17} strokeWidth={1.8} />
-          <span>Create Invoice</span>
-        </Link>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Segmented Time Filter Pills */}
+          <div className="inline-flex rounded-xl border border-[var(--border)] bg-white p-1 text-xs font-medium shadow-2xs">
+            {(["TODAY", "7D", "30D", "ALL"] as const).map((r) => {
+              const labels = {
+                TODAY: "Today",
+                "7D": "Last 7 Days",
+                "30D": "Last 30 Days",
+                ALL: "All Time",
+              };
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setTimeRange(r)}
+                  className={`rounded-lg px-3 py-1.5 transition ${
+                    timeRange === r
+                      ? "bg-[var(--primary)] text-white! shadow-xs"
+                      : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  {labels[r]}
+                </button>
+              );
+            })}
+          </div>
+
+          <Link
+            href="/invoices/new"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
+          >
+            <FilePlus2 size={17} strokeWidth={1.8} />
+            <span>Create Invoice</span>
+          </Link>
+        </div>
       </div>
 
       {/* Summary KPI Cards */}
@@ -135,28 +191,26 @@ export default function InvoicesPage() {
       <section className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white shadow-sm">
         {/* Filters Header */}
         <div className="flex flex-col gap-3 border-b border-[var(--border-light)] p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-md">
+          <div className="relative w-full sm:max-w-xs md:max-w-sm">
             <Search
-              size={17}
-              strokeWidth={1.8}
+              size={18}
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
             />
             <input
-              type="search"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by invoice #, buyer, or channel order ref..."
-              className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--muted-background)] pl-9 pr-3 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--primary)] focus:bg-white"
+              placeholder="Search by invoice #, buyer..."
+              className="form-input !pl-10"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2.5">
             {/* Status filter */}
-            <div className="relative">
+            <div className="relative w-36 sm:w-40">
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="h-10 appearance-none rounded-xl border border-[var(--border)] bg-white pl-3 pr-8 text-xs font-medium text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
+                className="form-input appearance-none pr-10"
               >
                 <option value="ALL">All Statuses</option>
                 <option value="ISSUED">Issued</option>
@@ -164,17 +218,17 @@ export default function InvoicesPage() {
                 <option value="CANCELLED">Cancelled</option>
               </select>
               <ChevronDown
-                size={14}
-                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+                size={17}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
               />
             </div>
 
             {/* Payment filter */}
-            <div className="relative">
+            <div className="relative w-36 sm:w-40">
               <select
                 value={paymentFilter}
                 onChange={(e) => setPaymentFilter(e.target.value)}
-                className="h-10 appearance-none rounded-xl border border-[var(--border)] bg-white pl-3 pr-8 text-xs font-medium text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
+                className="form-input appearance-none pr-10"
               >
                 <option value="ALL">All Payments</option>
                 <option value="PAID">Paid</option>
@@ -183,17 +237,17 @@ export default function InvoicesPage() {
                 <option value="OVERDUE">Overdue</option>
               </select>
               <ChevronDown
-                size={14}
-                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+                size={17}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
               />
             </div>
 
             {/* Channel filter */}
-            <div className="relative">
+            <div className="relative w-36 sm:w-40">
               <select
                 value={channelFilter}
                 onChange={(e) => setChannelFilter(e.target.value)}
-                className="h-10 appearance-none rounded-xl border border-[var(--border)] bg-white pl-3 pr-8 text-xs font-medium text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
+                className="form-input appearance-none pr-10"
               >
                 <option value="ALL">All Channels</option>
                 {channels.map((ch) => (
@@ -203,8 +257,8 @@ export default function InvoicesPage() {
                 ))}
               </select>
               <ChevronDown
-                size={14}
-                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+                size={17}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
               />
             </div>
           </div>
@@ -287,36 +341,79 @@ export default function InvoicesPage() {
                     </td>
 
                     <td className="px-4 py-4 text-right">
-                      <div className="flex items-center justify-center gap-1">
-                        {/* View action */}
-                        <Link
-                          href={`/invoices/view/${inv.id}`}
-                          title="View invoice details"
-                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--primary)] hover:bg-white hover:text-[var(--primary)]"
-                        >
-                          <Eye size={15} />
-                        </Link>
-
-                        {/* AUTHORIZED LOCATION 1 OF 2: Download Invoice Action in Table Row */}
+                      <div className="flex items-center justify-end gap-1">
+                        {/* Direct 1-Click Download PDF outside */}
                         <button
                           type="button"
                           onClick={() => handleDownloadInvoice(inv.id)}
                           title="Download Invoice PDF"
                           className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--primary)] hover:bg-white hover:text-[var(--primary)]"
                         >
-                          <Download size={15} />
+                          <Download size={14} />
                         </button>
 
-                        {inv.status !== "CANCELLED" && (
+                        {/* 3-Dots Dropdown Menu */}
+                        <div className="relative inline-block text-left">
                           <button
                             type="button"
-                            onClick={() => handleCancelInvoice(inv.id, inv.invoiceNumber)}
-                            title="Cancel invoice"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-transparent text-[var(--muted)] transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                            aria-label={`Actions for ${inv.invoiceNumber}`}
+                            onClick={() => setOpenMenuId(openMenuId === inv.id ? null : inv.id)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--foreground)] hover:bg-white hover:text-[var(--foreground)]"
                           >
-                            <Trash2 size={14} />
+                            <MoreHorizontal size={16} />
                           </button>
-                        )}
+
+                          {openMenuId === inv.id && (
+                            <div
+                              className="absolute right-0 top-9 z-30 w-44 rounded-xl border border-[var(--border)] bg-white p-1 text-left shadow-lg"
+                              onMouseLeave={() => setOpenMenuId(null)}
+                            >
+                              <Link
+                                href={`/invoices/view/${inv.id}`}
+                                onClick={() => setOpenMenuId(null)}
+                                className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-[var(--foreground)] hover:bg-[var(--muted-background)]"
+                              >
+                                <Eye size={14} className="text-[var(--muted)]" />
+                                <span>View Document</span>
+                              </Link>
+
+                              <Link
+                                href={`/invoices/edit/${inv.id}`}
+                                onClick={() => setOpenMenuId(null)}
+                                className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-[var(--foreground)] hover:bg-[var(--muted-background)]"
+                              >
+                                <Edit3 size={14} className="text-[var(--muted)]" />
+                                <span>Edit Invoice</span>
+                              </Link>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  handleDownloadInvoice(inv.id);
+                                }}
+                                className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs text-[var(--foreground)] hover:bg-[var(--muted-background)]"
+                              >
+                                <Download size={14} className="text-[var(--muted)]" />
+                                <span>Download PDF</span>
+                              </button>
+
+                              {inv.status !== "CANCELLED" && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setOpenMenuId(null);
+                                    handleCancelInvoice(inv.id, inv.invoiceNumber);
+                                  }}
+                                  className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs text-rose-600 hover:bg-rose-50"
+                                >
+                                  <Trash2 size={14} />
+                                  <span>Cancel Invoice</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>

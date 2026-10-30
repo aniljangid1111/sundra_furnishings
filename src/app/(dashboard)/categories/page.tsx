@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import {
     CheckCircle2,
+    ChevronDown,
     MoreHorizontal,
     Plus,
     Search,
@@ -97,7 +98,7 @@ export default function CategoriesPage() {
 
                 <Link
                     href="/categories/new"
-                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition hover:bg-[var(--primary-dark)]"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
                 >
                     <Plus size={17} />
                     Add Category
@@ -131,15 +132,15 @@ export default function CategoriesPage() {
             </div>
 
             <section className="rounded-xl border border-[var(--border)] bg-white">
-                <div className="flex flex-col gap-3 border-b border-[var(--border)] p-4 md:flex-row md:items-center md:justify-between">
-                    <div className="relative w-full md:max-w-sm">
+                <div className="flex flex-col gap-3 border-b border-[var(--border)] p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="relative w-full sm:max-w-xs md:max-w-sm">
                         <Search
-                            size={17}
+                            size={18}
                             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
                         />
 
                         <input
-                            className="form-input pl-9"
+                            className="form-input !pl-10"
                             value={search}
                             onChange={(event) =>
                                 setSearch(event.target.value)
@@ -148,29 +149,29 @@ export default function CategoriesPage() {
                         />
                     </div>
 
-                    <select
-                        className="form-input w-full md:w-40"
-                        value={statusFilter}
-                        onChange={(event) =>
-                            setStatusFilter(
-                                event.target.value as
-                                | "ALL"
-                                | CategoryStatus,
-                            )
-                        }
-                    >
-                        <option value="ALL">
-                            All Status
-                        </option>
-
-                        <option value="ACTIVE">
-                            Active
-                        </option>
-
-                        <option value="INACTIVE">
-                            Inactive
-                        </option>
-                    </select>
+                    <div className="flex items-center justify-end">
+                        <div className="relative w-40">
+                            <select
+                                className="form-input appearance-none pr-10"
+                                value={statusFilter}
+                                onChange={(event) =>
+                                    setStatusFilter(
+                                        event.target.value as
+                                        | "ALL"
+                                        | CategoryStatus,
+                                    )
+                                }
+                            >
+                                <option value="ALL">All Statuses</option>
+                                <option value="ACTIVE">Active</option>
+                                <option value="INACTIVE">Inactive</option>
+                            </select>
+                            <ChevronDown
+                                size={17}
+                                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+                            />
+                        </div>
+                    </div>
                 </div>
 
                 <div className="overflow-x-auto">

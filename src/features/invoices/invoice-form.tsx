@@ -25,6 +25,7 @@ import type {
   InvoiceLineItem,
   InvoicePaymentStatus,
   InvoiceStatus,
+  PaymentMethod,
 } from "./invoice.types";
 
 interface InvoiceFormProps {
@@ -73,6 +74,12 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
   // Status & payment
   const [status, setStatus] = useState<InvoiceStatus>(
     invoice?.status ?? "ISSUED",
+  );
+  const [paymentStatus, setPaymentStatus] = useState<InvoicePaymentStatus>(
+    invoice?.paymentStatus ?? "PAID",
+  );
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(
+    invoice?.paymentMethod ?? "BANK_TRANSFER",
   );
   const [shippingCharges, setShippingCharges] = useState(
     invoice?.shippingCharges !== undefined
@@ -205,12 +212,29 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
     Math.round((grandTotal - amountPaidNum) * 100) / 100,
   );
 
-  let paymentStatus: InvoicePaymentStatus = "PENDING";
-  if (amountPaidNum >= grandTotal && grandTotal > 0) {
-    paymentStatus = "PAID";
-  } else if (amountPaidNum > 0) {
-    paymentStatus = "PARTIALLY_PAID";
-  }
+  // Helper to mark fully paid
+  const handleMarkFullPaid = () => {
+    setPaymentStatus("PAID");
+    setAmountPaid(String(grandTotal));
+  };
+
+  // Helper to mark pending
+  const handleMarkPending = () => {
+    setPaymentStatus("PENDING");
+    setAmountPaid("0");
+  };
+
+  const handleAmountPaidChange = (newVal: string) => {
+    setAmountPaid(newVal);
+    const num = parseFloat(newVal) || 0;
+    if (num >= grandTotal && grandTotal > 0) {
+      setPaymentStatus("PAID");
+    } else if (num > 0) {
+      setPaymentStatus("PARTIALLY_PAID");
+    } else {
+      setPaymentStatus("PENDING");
+    }
+  };
 
   const validateForm = () => {
     const errs: Record<string, string> = {};
@@ -261,6 +285,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
       amountPaid: amountPaidNum,
       balanceDue,
       paymentStatus,
+      paymentMethod,
       status,
       notes: notes.trim(),
       termsAndConditions: paymentTerms.trim(),
@@ -272,10 +297,8 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
 
     setFeedbackMessage(
       isEdit
-        ? `Invoice ${invoiceNumber} updated. Note: Backend API persistence is pending implementation.`
-        : `Invoice ${invoiceNumber} issued for $${grandTotal.toFixed(2)}. ${
-            status === "ISSUED" ? "Stock deduction recorded once in local session." : ""
-          } Note: Backend API persistence is pending implementation.`,
+        ? `Invoice ${invoiceNumber} updated successfully with payment status ${paymentStatus}!`
+        : `Invoice ${invoiceNumber} issued for ${grandTotal.toFixed(2)} (${paymentStatus}). ${status === "ISSUED" ? "Inventory reserved." : ""}`, 
     );
   };
 
@@ -302,24 +325,6 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
                 : "Billing workflow supporting Walk-in retail, online marketplaces, and commercial buyers."}
             </p>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Link
-            href="/invoices"
-            className="inline-flex h-10 items-center justify-center rounded-lg border border-[var(--border)] bg-white px-4 text-sm font-medium transition hover:bg-[var(--muted-background)]"
-          >
-            Cancel
-          </Link>
-
-          <button
-            type="submit"
-            form="invoice-form"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition hover:bg-[var(--primary-dark)]"
-          >
-            <Save size={16} />
-            {isEdit ? "Save Changes" : "Issue / Save Invoice"}
-          </button>
         </div>
       </div>
 
@@ -680,30 +685,106 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
         {/* Step 4 & 5: Payment & Totals */}
         <div className="grid gap-6 sm:grid-cols-2">
           <section className="rounded-xl border border-[var(--border)] bg-white p-5 space-y-4">
-            <h2 className="text-sm font-semibold">Payment Details & Instructions</h2>
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium" htmlFor="payment-terms">
-                Payment Terms
-              </label>
-              <textarea
-                id="payment-terms"
-                className="min-h-[70px] w-full rounded-xl border border-[var(--border)] bg-white p-2.5 text-sm outline-none transition focus:border-[var(--primary)]"
-                value={paymentTerms}
-                onChange={(e) => setPaymentTerms(e.target.value)}
-              />
+            <div className="flex items-center justify-between border-b border-[var(--border-light)] pb-2.5">
+              <h2 className="text-sm font-semibold">Step 4: Payment Details & Status</h2>
+              <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                Printed on Invoice PDF
+              </span>
             </div>
 
+            {/* Document Status & Payment Status */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">
+                  Invoice Status
+                </label>
+                <select
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value as InvoiceStatus)}
+                  className="form-input text-xs"
+                >
+                  <option value="ISSUED">Issued (Active Billing)</option>
+                  <option value="DRAFT">Draft (Under Review)</option>
+                  <option value="CANCELLED">Cancelled / Void</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">
+                  Payment Status
+                </label>
+                <select
+                  value={paymentStatus}
+                  onChange={(e) => {
+                    const nextSt = e.target.value as InvoicePaymentStatus;
+                    setPaymentStatus(nextSt);
+                    if (nextSt === "PAID") setAmountPaid(String(grandTotal));
+                    if (nextSt === "PENDING") setAmountPaid("0");
+                  }}
+                  className="form-input text-xs font-medium"
+                >
+                  <option value="PAID">PAID (Full Settlement)</option>
+                  <option value="PARTIALLY_PAID">PARTIALLY PAID</option>
+                  <option value="PENDING">PENDING (Unpaid / Credit)</option>
+                  <option value="OVERDUE">OVERDUE</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Payment Mode / Method */}
             <div>
-              <label className="mb-1.5 block text-sm font-medium" htmlFor="inv-notes">
-                Order Notes
+              <label className="mb-1.5 block text-xs font-semibold text-slate-700">
+                Payment Method / Received Via
               </label>
+              <select
+                value={paymentMethod}
+                onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                className="form-input text-xs"
+              >
+                <option value="BANK_TRANSFER">Bank Wire / Transfer (NEFT / IMPS / Wire)</option>
+                <option value="CASH">Cash / Storefront Currency</option>
+                <option value="CREDIT_CARD">Credit / Debit Card</option>
+                <option value="UPI">UPI / Instant QR Payment</option>
+                <option value="CHECK">Company / Personal Check</option>
+              </select>
+            </div>
+
+            {/* Payment Terms Presets & Textarea */}
+            <div>
+              <div className="mb-1.5 flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-700" htmlFor="payment-terms">
+                  Payment Terms & Conditions
+                </label>
+                <span className="text-[11px] text-[var(--muted)]">Click preset to populate</span>
+              </div>
+
+              {/* Presets Pills */}
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {[
+                  { label: "Due on Receipt", val: "Due on Receipt. Payment expected immediately upon invoice issuance." },
+                  { label: "Net 15", val: "Net 15 Days. Payment is due within 15 calendar days from billing date." },
+                  { label: "Net 30", val: "Payment is due within 30 days of invoice date. Bank wire or ACH accepted." },
+                  { label: "50% Advance", val: "50% advance deposit received. Balance due upon delivery and inspection." },
+                  { label: "Cash on Delivery", val: "Cash on Delivery (COD). Full payment required upon delivery." },
+                ].map((preset) => (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => setPaymentTerms(preset.val)}
+                    className="rounded-lg border border-[var(--border)] bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700 transition hover:bg-white hover:border-[var(--primary)]"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
               <textarea
-                id="inv-notes"
-                className="min-h-[70px] w-full rounded-xl border border-[var(--border)] bg-white p-2.5 text-sm outline-none transition focus:border-[var(--primary)]"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Assembly instructions, gate access codes..."
+                id="payment-terms"
+                rows={3}
+                className="h-20 w-full resize-none rounded-xl border border-[var(--border)] bg-white p-2.5 text-xs outline-none transition focus:border-[var(--primary)]"
+                value={paymentTerms}
+                onChange={(e) => setPaymentTerms(e.target.value)}
+                placeholder="Payment due within 30 days..."
               />
             </div>
           </section>
@@ -746,7 +827,25 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
             </div>
 
             <div className="flex items-center justify-between text-sm border-t border-[var(--border-light)] pt-2">
-              <span className="text-[var(--muted)]">Amount Collected</span>
+              <div>
+                <span className="text-slate-800 font-medium">Amount Collected</span>
+                <div className="mt-1 flex gap-1">
+                  <button
+                    type="button"
+                    onClick={handleMarkFullPaid}
+                    className="rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                  >
+                    Full Paid
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleMarkPending}
+                    className="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-200"
+                  >
+                    Zero / Pending
+                  </button>
+                </div>
+              </div>
               <div className="w-28">
                 <input
                   type="number"
@@ -754,7 +853,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
                   step="0.01"
                   className="form-input h-8 text-right text-xs"
                   value={amountPaid}
-                  onChange={(e) => setAmountPaid(e.target.value)}
+                  onChange={(e) => handleAmountPaidChange(e.target.value)}
                 />
               </div>
             </div>
@@ -784,7 +883,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
 
           <button
             type="submit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white transition hover:bg-[var(--primary-dark)]"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
           >
             <Save size={16} />
             {isEdit ? "Save Changes" : "Save / Finalize Invoice"}

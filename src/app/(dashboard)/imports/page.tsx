@@ -60,7 +60,7 @@ export default function ImportsListingPage() {
 
         <Link
           href="/imports/new"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary-dark)]"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
         >
           <Plus size={17} strokeWidth={2} />
           <span>New Import Shipment</span>
@@ -113,7 +113,7 @@ export default function ImportsListingPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by import #, supplier, invoice, or BOL ref..."
-              className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--muted-background)] pl-9 pr-3 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--primary)] focus:bg-white"
+              className="h-10 w-full rounded-xl border border-[var(--border)]  pl-9 pr-3 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--primary)] focus:bg-white"
             />
           </div>
 

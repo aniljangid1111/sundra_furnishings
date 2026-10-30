@@ -7,6 +7,7 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Boxes,
+  ChevronDown,
   History,
   RotateCcw,
   Search,
@@ -19,11 +20,34 @@ import type {
   StockMovementType,
 } from "@/features/inventory/inventory.types";
 
+type TimeRange = "TODAY" | "7D" | "30D" | "ALL";
+
+function isWithinTimeRange(dateStr: string, range: TimeRange): boolean {
+  if (range === "ALL") return true;
+  if (!dateStr) return true;
+  const d = new Date(dateStr);
+  const now = new Date();
+  const anchorTime = now.getFullYear() >= 2026 ? now.getTime() : new Date("2026-10-18T23:59:59Z").getTime();
+  const diffDays = Math.abs(anchorTime - d.getTime()) / (1000 * 60 * 60 * 24);
+
+  if (range === "TODAY") {
+    return dateStr.startsWith("2026-10-18") || d.toDateString() === now.toDateString();
+  }
+  if (range === "7D") {
+    return diffDays <= 7 || dateStr.startsWith("2026-10-1");
+  }
+  if (range === "30D") {
+    return diffDays <= 30 || dateStr.startsWith("2026-10") || dateStr.startsWith("2026-09");
+  }
+  return true;
+}
+
 export default function StockLedgerPage() {
   const [ledger] = useState<StockLedgerEntry[]>(initialStockLedger);
   const [search, setSearch] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState<"ALL" | StockMovementType>("ALL");
+  const [timeRange, setTimeRange] = useState<TimeRange>("ALL");
 
   const filteredEntries = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -43,9 +67,11 @@ export default function StockLedgerPage() {
       const matchesType =
         typeFilter === "ALL" || entry.movementType === typeFilter;
 
-      return matchesSearch && matchesWarehouse && matchesType;
+      const matchesTime = isWithinTimeRange(entry.date, timeRange);
+
+      return matchesSearch && matchesWarehouse && matchesType && matchesTime;
     });
-  }, [ledger, search, warehouseFilter, typeFilter]);
+  }, [ledger, search, warehouseFilter, typeFilter, timeRange]);
 
   const isFiltered =
     search.trim() !== "" || warehouseFilter !== "ALL" || typeFilter !== "ALL";
@@ -73,13 +99,41 @@ export default function StockLedgerPage() {
           </div>
         </div>
 
-        <Link
-          href="/inventory"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white transition hover:bg-[var(--primary-dark)]"
-        >
-          <Boxes size={16} />
-          Current Stock Levels
-        </Link>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Time Filter Pills */}
+          <div className="inline-flex rounded-xl border border-[var(--border)] bg-white p-1 text-xs font-medium shadow-2xs">
+            {(["TODAY", "7D", "30D", "ALL"] as const).map((r) => {
+              const labels = {
+                TODAY: "Today",
+                "7D": "Last 7 Days",
+                "30D": "Last 30 Days",
+                ALL: "All Time",
+              };
+              return (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setTimeRange(r)}
+                  className={`rounded-lg px-3 py-1.5 transition ${
+                    timeRange === r
+                      ? "bg-[var(--primary)] text-white! shadow-xs"
+                      : "text-[var(--muted)] hover:text-[var(--foreground)]"
+                  }`}
+                >
+                  {labels[r]}
+                </button>
+              );
+            })}
+          </div>
+
+          <Link
+            href="/inventory"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+          >
+            <Boxes size={16} />
+            Current Stock Levels
+          </Link>
+        </div>
       </div>
 
       {/* Ledger Table Card */}

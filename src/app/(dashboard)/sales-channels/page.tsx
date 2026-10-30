@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
+    ChevronDown,
     Plus,
     Search,
     Store,
@@ -125,7 +126,7 @@ export default function SalesChannelsPage() {
 
                 <Link
                     href="/sales-channels/new"
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white hover:bg-[var(--primary-dark)]"
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! hover:bg-[var(--primary-dark)]"
                 >
                     <Plus size={18} />
                     Add Channel
@@ -164,30 +165,36 @@ export default function SalesChannelsPage() {
                         </p>
                     </div>
 
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                        <div className="relative">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <div className="relative w-full sm:w-56">
                             <Search
-                                size={15}
-                                className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+                                size={18}
+                                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
                             />
                             <input
                                 value={search}
                                 onChange={(event) => setSearch(event.target.value)}
                                 placeholder="Search channels..."
-                                className="h-9 w-full rounded-lg border border-[var(--border)] pl-9 pr-3 text-xs outline-none focus:border-[var(--primary)] sm:w-48"
+                                className="form-input !pl-10"
                             />
                         </div>
 
-                        <select
-                            value={statusFilter}
-                            onChange={(event) => setStatusFilter(event.target.value)}
-                            className="h-9 rounded-lg border border-[var(--border)] bg-white px-2.5  text-md! outline-none focus:border-[var(--primary)]"
-                            aria-label="Filter by status"
-                        >
-                            <option value="ALL">All Statuses</option>
-                            <option value="ACTIVE">Active</option>
-                            <option value="INACTIVE">Inactive</option>
-                        </select>
+                        <div className="relative w-36">
+                            <select
+                                value={statusFilter}
+                                onChange={(event) => setStatusFilter(event.target.value)}
+                                className="form-input appearance-none pr-10"
+                                aria-label="Filter by status"
+                            >
+                                <option value="ALL">All Statuses</option>
+                                <option value="ACTIVE">Active</option>
+                                <option value="INACTIVE">Inactive</option>
+                            </select>
+                            <ChevronDown
+                                size={17}
+                                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+                            />
+                        </div>
                     </div>
                 </div>
 

@@ -6,6 +6,13 @@ export type InvoicePaymentStatus =
   | "PENDING"
   | "OVERDUE";
 
+export type PaymentMethod =
+  | "CASH"
+  | "BANK_TRANSFER"
+  | "CREDIT_CARD"
+  | "UPI"
+  | "CHECK";
+
 export interface InvoiceLineItem {
   id: number;
   productId: number;
@@ -45,6 +52,7 @@ export interface Invoice {
   amountPaid: number;
   balanceDue: number;
   paymentStatus: InvoicePaymentStatus;
+  paymentMethod?: PaymentMethod;
   status: InvoiceStatus;
   notes?: string;
   termsAndConditions?: string;

@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Building2,
   CheckCircle2,
+  ChevronDown,
   CircleOff,
   Eye,
   MoreHorizontal,
@@ -99,7 +100,7 @@ export default function SuppliersPage() {
 
         <Link
           href="/suppliers/new"
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary-dark)]"
+          className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
         >
           <Plus size={18} />
           Add Supplier
@@ -151,32 +152,38 @@ export default function SuppliersPage() {
       <div className="rounded-2xl border border-[var(--border)] bg-white">
         {/* Search & Filters */}
         <div className="flex flex-col gap-3 border-b border-[var(--border-light)] p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative flex-1 sm:max-w-xs">
+          <div className="relative w-full sm:max-w-xs md:max-w-sm">
             <Search
-              size={15}
+              size={18}
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
             />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search vendor, code, contact..."
-              className="h-10 w-full rounded-xl border border-[var(--border)] bg-white pl-9 pr-3 text-xs outline-none transition focus:border-[var(--primary)]"
+              className="form-input !pl-10"
             />
           </div>
 
           <div className="flex items-center gap-2.5">
-            <select
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as "ALL" | SupplierStatus)
-              }
-              className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-xs outline-none transition focus:border-[var(--primary)]"
-              aria-label="Filter by supplier status"
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-            </select>
+            <div className="relative w-40">
+              <select
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as "ALL" | SupplierStatus)
+                }
+                className="form-input appearance-none pr-10"
+                aria-label="Filter by supplier status"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+              <ChevronDown
+                size={17}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+              />
+            </div>
 
             {isFiltered && (
               <button

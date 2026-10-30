@@ -386,7 +386,7 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
 
           <button
             type="submit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-5 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary-dark)] active:scale-95"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-5 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)] active:scale-95"
           >
             <Save size={16} />
             <span>{isEdit ? "Update Import" : "Save Landed Cost"}</span>
@@ -822,7 +822,7 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
           </Link>
           <button
             type="submit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-6 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary-dark)] active:scale-95"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-6 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)] active:scale-95"
           >
             <Save size={16} />
             <span>Save Landed Cost Calculation</span>

@@ -158,7 +158,7 @@ export default function ProductsPage() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search products or SKU..."
-                className="form-input pl-10"
+                className="form-input !pl-10"
               />
             </div>
 

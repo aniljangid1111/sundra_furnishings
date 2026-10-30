@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Boxes,
+  ChevronDown,
   CircleDollarSign,
   History,
   Layers,
@@ -174,7 +175,7 @@ export default function InventoryPage() {
 
           <Link
             href="/inventory/warehouses"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary-dark)]"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
           >
             <Warehouse size={16} />
             Warehouses ({warehouses.length})
@@ -230,61 +231,79 @@ export default function InventoryPage() {
       <div className="rounded-2xl border border-[var(--border)] bg-white">
         {/* Filters */}
         <div className="flex flex-col gap-3 border-b border-[var(--border-light)] p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative flex-1 sm:max-w-xs">
+          <div className="relative w-full sm:max-w-xs md:max-w-sm">
             <Search
-              size={15}
+              size={18}
               className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
             />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search product name or SKU..."
-              className="h-10 w-full rounded-xl border border-[var(--border)] bg-white pl-9 pr-3 text-xs outline-none transition focus:border-[var(--primary)]"
+              className="form-input !pl-10"
             />
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <select
-              value={warehouseFilter}
-              onChange={(e) => setWarehouseFilter(e.target.value)}
-              className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-xs outline-none transition focus:border-[var(--primary)]"
-              aria-label="Filter by warehouse"
-            >
-              <option value="ALL">All Warehouses</option>
-              {warehouses.map((w) => (
-                <option key={w.id} value={String(w.id)}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
+            <div className="relative w-44">
+              <select
+                value={warehouseFilter}
+                onChange={(e) => setWarehouseFilter(e.target.value)}
+                className="form-input appearance-none pr-10"
+                aria-label="Filter by warehouse"
+              >
+                <option value="ALL">All Warehouses</option>
+                {warehouses.map((w) => (
+                  <option key={w.id} value={String(w.id)}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={17}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+              />
+            </div>
 
-            <select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-xs outline-none transition focus:border-[var(--primary)]"
-              aria-label="Filter by category"
-            >
-              <option value="ALL">All Categories</option>
-              {categories.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
+            <div className="relative w-40">
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="form-input appearance-none pr-10"
+                aria-label="Filter by category"
+              >
+                <option value="ALL">All Categories</option>
+                {categories.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown
+                size={17}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+              />
+            </div>
 
-            <select
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value as "ALL" | StockStatus)
-              }
-              className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-xs outline-none transition focus:border-[var(--primary)]"
-              aria-label="Filter by stock status"
-            >
-              <option value="ALL">All Stock Statuses</option>
-              <option value="IN_STOCK">In Stock</option>
-              <option value="LOW_STOCK">Low Stock</option>
-              <option value="OUT_OF_STOCK">Out of Stock</option>
-            </select>
+            <div className="relative w-40">
+              <select
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(e.target.value as "ALL" | StockStatus)
+                }
+                className="form-input appearance-none pr-10"
+                aria-label="Filter by stock status"
+              >
+                <option value="ALL">All Stock Statuses</option>
+                <option value="IN_STOCK">In Stock</option>
+                <option value="LOW_STOCK">Low Stock</option>
+                <option value="OUT_OF_STOCK">Out of Stock</option>
+              </select>
+              <ChevronDown
+                size={17}
+                className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+              />
+            </div>
 
             {isFiltered && (
               <button
@@ -493,7 +512,7 @@ export default function InventoryPage() {
                 type="button"
                 onClick={handleApplyAdjustment}
                 disabled={!adjustmentQty || parseInt(adjustmentQty, 10) === 0}
-                className="rounded-lg bg-[var(--primary)] px-4 py-2 text-xs font-medium text-white hover:bg-[var(--primary-dark)] disabled:opacity-50"
+                className="rounded-lg bg-[var(--primary)] px-4 py-2 text-xs font-medium text-white! hover:bg-[var(--primary-dark)] disabled:opacity-50"
               >
                 Apply & Record Ledger
               </button>

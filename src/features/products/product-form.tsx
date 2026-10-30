@@ -226,7 +226,7 @@ export function ProductForm({
           <button
             type="submit"
             form="product-form"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white transition hover:bg-[var(--primary-dark)]"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
           >
             <Save size={16} />
             {isEdit ? "Save Changes" : "Save Product"}
@@ -665,7 +665,7 @@ export function ProductForm({
 
           <button
             type="submit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white transition hover:bg-[var(--primary-dark)]"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
           >
             <Save size={16} />
             {isEdit ? "Save Changes" : "Save Product"}

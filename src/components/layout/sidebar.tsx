@@ -14,6 +14,7 @@ import {
   ShoppingCart,
   Store,
   Tags,
+  TrendingUp,
   Truck,
   Users,
   Warehouse,
@@ -31,8 +32,8 @@ const menuSections = [
       },
       {
         label: "Insights",
-        href: "/reports",
-        icon: BarChart3,
+        href: "/insights",
+        icon: TrendingUp,
       },
     ],
   },
@@ -45,12 +46,7 @@ const menuSections = [
         icon: FileText,
       },
       {
-        label: "Quotations",
-        href: "/quotations",
-        icon: FileText,
-      },
-      {
-        label: "Purchases",
+        label: "Purchases Order",
         href: "/purchases",
         icon: ShoppingCart,
       },
@@ -83,11 +79,6 @@ const menuSections = [
         label: "Sales Channels",
         href: "/sales-channels",
         icon: Store,
-      },
-      {
-        label: "Customers",
-        href: "/customers",
-        icon: Users,
       },
       {
         label: "Suppliers",

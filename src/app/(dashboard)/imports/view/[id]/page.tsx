@@ -88,7 +88,7 @@ export default async function ViewImportPage({ params }: ViewImportPageProps) {
           {shipment.status !== "COMPLETED" && (
             <Link
               href={`/imports/edit/${shipment.id}`}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--primary-dark)]"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
             >
               <Edit3 size={15} />
               <span>Edit Shipment</span>

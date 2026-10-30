@@ -85,7 +85,7 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
           <button
             type="submit"
             form="warehouse-form"
-            className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--primary-dark)]"
+            className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white! hover:bg-[var(--primary-dark)]"
           >
             <Save size={16} />
             {isEdit ? "Save Changes" : "Save Warehouse"}
@@ -249,7 +249,7 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
           </Link>
           <button
             type="submit"
-            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--primary-dark)]"
+            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white! hover:bg-[var(--primary-dark)]"
           >
             {isEdit ? "Save Changes" : "Save Warehouse"}
           </button>

@@ -49,7 +49,7 @@ export function Header({
 
       {/* Actions */}
       <div className="ml-3 flex shrink-0 items-center gap-2 sm:gap-3">
-        <button
+        {/* <button
           type="button"
           aria-label="Notifications"
           className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] text-[var(--muted)] transition hover:bg-[var(--muted-background)] hover:text-[var(--foreground)]"
@@ -57,21 +57,21 @@ export function Header({
           <Bell size={17} strokeWidth={1.8} />
 
           <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[var(--primary)]" />
-        </button>
+        </button> */}
 
-        <div className="hidden h-8 w-px bg-[var(--border)] sm:block" />
+        {/* <div className="hidden h-8 w-px bg-[var(--border)] sm:block" /> */}
 
         <button
           type="button"
           className="flex items-center gap-2 rounded-xl px-1.5 py-1.5 transition hover:bg-[var(--muted-background)] sm:px-2"
         >
           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--primary-light)] text-sm font-semibold text-[var(--primary)]">
-            A
+            S
           </div>
 
           <div className="hidden text-left md:block">
             <p className="text-sm font-medium text-[var(--foreground)]">
-              Anil
+              Sundara Furnishings
             </p>
 
             <p className="text-xs text-[var(--muted)]">

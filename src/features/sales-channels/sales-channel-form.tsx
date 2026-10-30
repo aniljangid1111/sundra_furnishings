@@ -201,7 +201,7 @@ export function SalesChannelForm({
 
           <button
             type="submit"
-            className="inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-medium text-white hover:bg-[var(--primary-dark)]"
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--primary)] px-4 py-2.5 text-sm font-medium text-white! hover:bg-[var(--primary-dark)]"
           >
             <Save size={16} />
             {mode === "create" ? "Save Channel" : "Save Changes"}
