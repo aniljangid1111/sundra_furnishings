@@ -1,4 +1,3 @@
-
 import type { SalesChannel } from "./sales-channel.types";
 
 export const salesChannels: SalesChannel[] = [
@@ -34,12 +33,12 @@ export const salesChannels: SalesChannel[] = [
   },
   {
     id: 4,
-    name: "Retail Store",
-    code: "RTL",
+    name: "Direct Shop / Retail Showroom",
+    code: "POS",
     type: "RETAIL",
     website: "",
-    description: "Direct sales through physical retail stores.",
-    productCount: 0,
-    status: "INACTIVE",
+    description: "Direct walk-in customer purchases through physical showroom.",
+    productCount: 12,
+    status: "ACTIVE",
   },
 ];

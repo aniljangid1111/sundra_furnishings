@@ -20,6 +20,7 @@ import {
 import { products } from "@/features/products/product.data";
 import { salesChannels } from "@/features/sales-channels/sales-channel.data";
 import { warehouses } from "@/features/warehouses/warehouse.data";
+import { getDefaultTaxRate } from "@/features/settings/tax-settings.data";
 import type {
   Invoice,
   InvoiceLineItem,
@@ -42,6 +43,9 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
   );
   const [salesChannelId, setSalesChannelId] = useState<number>(
     invoice?.salesChannelId ?? 1,
+  );
+  const activeChannel = salesChannels.find(
+    (c) => c.id === Number(salesChannelId),
   );
   const [externalOrderId, setExternalOrderId] = useState(
     invoice?.externalOrderId ?? "",
@@ -94,6 +98,8 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
   );
   const [notes, setNotes] = useState(invoice?.notes ?? "");
 
+  const initialTax = typeof window !== "undefined" ? getDefaultTaxRate() : 18;
+
   // Line items
   const [items, setItems] = useState<InvoiceLineItem[]>(
     invoice?.items ?? [
@@ -105,8 +111,13 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
         quantity: 1,
         unitPrice: products[1]?.sellingPrice || 420,
         discount: 0,
-        taxRate: 8.25,
-        lineTotal: Math.round((products[1]?.sellingPrice || 420) * 1.0825 * 100) / 100,
+        taxRate: products[1]?.taxRate || initialTax,
+        lineTotal:
+          Math.round(
+            (products[1]?.sellingPrice || 420) *
+              (1 + (products[1]?.taxRate || initialTax) / 100) *
+              100
+          ) / 100,
       },
     ],
   );
@@ -129,6 +140,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
     const selectedProd = products.find((p) => p.id === pId);
     if (!selectedProd) return;
 
+    const defaultTax = typeof window !== "undefined" ? getDefaultTaxRate() : 18;
     setItems((prev) =>
       prev.map((item, idx) => {
         if (idx !== index) return item;
@@ -136,7 +148,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
           item.quantity,
           selectedProd.sellingPrice,
           item.discount,
-          selectedProd.taxRate || 8.25,
+          selectedProd.taxRate || defaultTax,
         );
         return {
           ...item,
@@ -144,7 +156,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
           sku: selectedProd.sku,
           productName: selectedProd.name,
           unitPrice: selectedProd.sellingPrice,
-          taxRate: selectedProd.taxRate || 8.25,
+          taxRate: selectedProd.taxRate || defaultTax,
           lineTotal,
         };
       }),
@@ -173,6 +185,8 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
 
   const addItem = () => {
     const firstProd = products[0];
+    const defaultTax = typeof window !== "undefined" ? getDefaultTaxRate() : 18;
+    const rate = firstProd?.taxRate || defaultTax;
     const newItem: InvoiceLineItem = {
       id: Date.now(),
       productId: firstProd?.id || 1,
@@ -181,8 +195,10 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
       quantity: 1,
       unitPrice: firstProd?.sellingPrice || 189,
       discount: 0,
-      taxRate: 8.25,
-      lineTotal: Math.round((firstProd?.sellingPrice || 189) * 1.0825 * 100) / 100,
+      taxRate: rate,
+      lineTotal:
+        Math.round((firstProd?.sellingPrice || 189) * (1 + rate / 100) * 100) /
+        100,
     };
     setItems((prev) => [...prev, newItem]);
   };
@@ -366,14 +382,14 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
 
             <div>
               <label className="mb-1.5 block text-sm font-medium" htmlFor="ext-order">
-                External Order Ref #
+                Order ID / Ref # <span className="text-xs font-normal text-slate-400">(Optional)</span>
               </label>
               <input
                 id="ext-order"
                 className="form-input font-mono"
                 value={externalOrderId}
                 onChange={(e) => setExternalOrderId(e.target.value)}
-                placeholder="e.g. AMZ-99120 or WEB-441"
+                placeholder="e.g. AMZ-99120 (optional for shop sales)"
               />
             </div>
 

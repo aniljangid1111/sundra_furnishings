@@ -49,12 +49,15 @@ import {
   monthlyRevenueTrends,
 } from "@/features/insights/insight.data";
 import { InfoTooltip } from "@/components/ui/tooltip";
+import { DateRangeFilter } from "@/components/ui/date-range-filter";
 
-type TimeRange = "TODAY" | "7D" | "30D" | "ALL";
+type TimeRange = "TODAY" | "7D" | "30D" | "CUSTOM" | "ALL";
 
 export default function InsightsPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>("30D");
   const [categoryView, setCategoryView] = useState<"ranked" | "chart">("ranked");
+  const [customStartDate, setCustomStartDate] = useState("2026-10-01");
+  const [customEndDate, setCustomEndDate] = useState("2026-10-28");
 
   const channelData = useMemo(() => getChannelBreakdown(), []);
   const categoryData = useMemo(() => getCategoryBreakdown(), []);
@@ -62,14 +65,23 @@ export default function InsightsPage() {
   const maxCategoryRevenue = useMemo(() => Math.max(...categoryData.map((c) => c.revenue), 1), [categoryData]);
 
   // Time range multiplier simulation for realistic filter reactions
-  const multiplier = timeRange === "TODAY" ? 0.05 : timeRange === "7D" ? 0.28 : timeRange === "30D" ? 1.0 : 3.8;
+  const multiplier =
+    timeRange === "TODAY"
+      ? 0.05
+      : timeRange === "7D"
+      ? 0.28
+      : timeRange === "30D"
+      ? 1.0
+      : timeRange === "CUSTOM"
+      ? 0.65
+      : 3.8;
   const currentRevenue = 48250 * multiplier;
   const currentProfit = 26410 * multiplier;
 
   return (
     <div className="space-y-6">
       {/* Top Header */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div>
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">
@@ -85,57 +97,22 @@ export default function InsightsPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Simple Clean Time Filter */}
-          <div className="inline-flex rounded-xl border border-[var(--border)] bg-white p-1 text-xs font-medium shadow-2xs">
-            <button
-              type="button"
-              onClick={() => setTimeRange("TODAY")}
-              className={`rounded-lg px-3 py-1.5 transition ${timeRange === "TODAY"
-                ? "bg-[var(--primary)] text-white! shadow-xs"
-                : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                }`}
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={() => setTimeRange("7D")}
-              className={`rounded-lg px-3 py-1.5 transition ${timeRange === "7D"
-                ? "bg-[var(--primary)] text-white! shadow-xs"
-                : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                }`}
-            >
-              Last 7 Days
-            </button>
-            <button
-              type="button"
-              onClick={() => setTimeRange("30D")}
-              className={`rounded-lg px-3 py-1.5 transition ${timeRange === "30D"
-                ? "bg-[var(--primary)] text-white! shadow-xs"
-                : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                }`}
-            >
-              Last 30 Days
-            </button>
-            <button
-              type="button"
-              onClick={() => setTimeRange("ALL")}
-              className={`rounded-lg px-3 py-1.5 transition ${timeRange === "ALL"
-                ? "bg-[var(--primary)] text-white! shadow-xs"
-                : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                }`}
-            >
-              All Time
-            </button>
-          </div>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
+          <DateRangeFilter
+            value={timeRange}
+            onChange={setTimeRange}
+            startDate={customStartDate}
+            endDate={customEndDate}
+            onStartDateChange={setCustomStartDate}
+            onEndDateChange={setCustomEndDate}
+          />
 
           <Link
             href="/reports"
-            className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-[var(--border)] bg-white px-3.5 text-xs font-semibold text-[var(--foreground)] shadow-2xs transition hover:bg-[var(--muted-background)]"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-[var(--border)] bg-white px-3 text-xs font-semibold text-[var(--foreground)] shadow-2xs transition hover:bg-[var(--muted-background)] whitespace-nowrap"
           >
             <FileText size={14} className="text-[var(--primary)]" />
-            Detailed Reports
+            <span>Detailed Reports</span>
           </Link>
         </div>
       </div>
@@ -635,19 +612,23 @@ function InsightStatCard({
 }) {
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-2xs">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <p className="text-sm font-medium text-[var(--muted)]">{label}</p>
-          {tooltip && (
-            <InfoTooltip
-              content={tooltip}
-              position={tooltipPosition}
-              align={tooltipAlign}
-              size={13}
-            />
-          )}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium leading-snug text-[var(--muted)]">
+            <span>{label}</span>
+            {tooltip && (
+              <span className="ml-1.5 inline-block align-middle">
+                <InfoTooltip
+                  content={tooltip}
+                  position={tooltipPosition}
+                  align={tooltipAlign}
+                  size={13}
+                />
+              </span>
+            )}
+          </div>
         </div>
-        <span className={`flex h-10 w-10 items-center justify-center rounded-xl ${iconBg} ${iconColor}`}>
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg} ${iconColor}`}>
           <Icon size={20} />
         </span>
       </div>

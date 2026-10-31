@@ -21,10 +21,16 @@ import {
 import { initialInvoices } from "@/features/invoices/invoice.data";
 import type { Invoice, InvoicePaymentStatus, InvoiceStatus } from "@/features/invoices/invoice.types";
 import { downloadInvoicePdf } from "@/lib/pdf-export";
+import { DateRangeFilter } from "@/components/ui/date-range-filter";
 
-type TimeRange = "TODAY" | "7D" | "30D" | "ALL";
+type TimeRange = "TODAY" | "7D" | "30D" | "CUSTOM" | "ALL";
 
-function isWithinTimeRange(dateStr: string, range: TimeRange): boolean {
+function isWithinTimeRange(
+  dateStr: string,
+  range: TimeRange,
+  customStart?: string,
+  customEnd?: string
+): boolean {
   if (range === "ALL") return true;
   if (!dateStr) return true;
   const d = new Date(dateStr);
@@ -41,6 +47,13 @@ function isWithinTimeRange(dateStr: string, range: TimeRange): boolean {
   if (range === "30D") {
     return diffDays <= 30 || dateStr.startsWith("2026-10") || dateStr.startsWith("2026-09");
   }
+  if (range === "CUSTOM") {
+    if (!customStart && !customEnd) return true;
+    const time = new Date(dateStr).getTime();
+    if (customStart && time < new Date(customStart).getTime()) return false;
+    if (customEnd && time > new Date(`${customEnd}T23:59:59`).getTime()) return false;
+    return true;
+  }
   return true;
 }
 
@@ -51,6 +64,8 @@ export default function InvoicesPage() {
   const [paymentFilter, setPaymentFilter] = useState<string>("ALL");
   const [channelFilter, setChannelFilter] = useState<string>("ALL");
   const [timeRange, setTimeRange] = useState<TimeRange>("ALL");
+  const [customStartDate, setCustomStartDate] = useState("2026-10-01");
+  const [customEndDate, setCustomEndDate] = useState("2026-10-28");
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
   // Channels for filter
   const channels = Array.from(new Set(invoices.map((inv) => inv.salesChannelName)));
@@ -65,7 +80,7 @@ export default function InvoicesPage() {
     const matchesStatus = statusFilter === "ALL" || inv.status === statusFilter;
     const matchesPayment = paymentFilter === "ALL" || inv.paymentStatus === paymentFilter;
     const matchesChannel = channelFilter === "ALL" || inv.salesChannelName === channelFilter;
-    const matchesTime = isWithinTimeRange(inv.invoiceDate, timeRange);
+    const matchesTime = isWithinTimeRange(inv.invoiceDate, timeRange, customStartDate, customEndDate);
 
     return matchesSearch && matchesStatus && matchesPayment && matchesChannel && matchesTime;
   });
@@ -106,7 +121,7 @@ export default function InvoicesPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div>
           <p className="text-sm font-medium text-[var(--primary)]">
             Billing & Receivables
@@ -119,38 +134,21 @@ export default function InvoicesPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {/* Segmented Time Filter Pills */}
-          <div className="inline-flex rounded-xl border border-[var(--border)] bg-white p-1 text-xs font-medium shadow-2xs">
-            {(["TODAY", "7D", "30D", "ALL"] as const).map((r) => {
-              const labels = {
-                TODAY: "Today",
-                "7D": "Last 7 Days",
-                "30D": "Last 30 Days",
-                ALL: "All Time",
-              };
-              return (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setTimeRange(r)}
-                  className={`rounded-lg px-3 py-1.5 transition ${
-                    timeRange === r
-                      ? "bg-[var(--primary)] text-white! shadow-xs"
-                      : "text-[var(--muted)] hover:text-[var(--foreground)]"
-                  }`}
-                >
-                  {labels[r]}
-                </button>
-              );
-            })}
-          </div>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
+          <DateRangeFilter
+            value={timeRange}
+            onChange={setTimeRange}
+            startDate={customStartDate}
+            endDate={customEndDate}
+            onStartDateChange={setCustomStartDate}
+            onEndDateChange={setCustomEndDate}
+          />
 
           <Link
             href="/invoices/new"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 text-xs font-semibold text-white! shadow-xs transition hover:bg-[var(--primary-dark)] whitespace-nowrap"
           >
-            <FilePlus2 size={17} strokeWidth={1.8} />
+            <FilePlus2 size={16} strokeWidth={1.8} />
             <span>Create Invoice</span>
           </Link>
         </div>

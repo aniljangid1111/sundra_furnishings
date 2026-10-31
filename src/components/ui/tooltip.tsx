@@ -64,7 +64,7 @@ export function Tooltip({
   };
 
   return (
-    <div
+    <span
       className={`relative inline-flex items-center ${className}`}
       onMouseEnter={showTooltip}
       onMouseLeave={hideTooltip}
@@ -74,18 +74,18 @@ export function Tooltip({
       {children}
 
       {isVisible && content && (
-        <div
+        <span
           role="tooltip"
           className={`pointer-events-none absolute z-50 whitespace-normal rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-normal text-white shadow-xl transition-all animate-in fade-in-0 zoom-in-95 max-w-xs ${positionClasses[position]}`}
           style={{ width: "max-content", maxWidth: "240px" }}
         >
           {content}
-          <div
+          <span
             className={`absolute h-0 w-0 border-4 ${arrowClasses[position]}`}
           />
-        </div>
+        </span>
       )}
-    </div>
+    </span>
   );
 }
 

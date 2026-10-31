@@ -11,11 +11,13 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
+  ShieldCheck,
   ShoppingCart,
   Store,
   Tags,
   TrendingUp,
   Truck,
+  UserCog,
   Users,
   Warehouse,
   X,
@@ -90,6 +92,16 @@ const menuSections = [
   {
     title: "System",
     items: [
+      {
+        label: "User Management",
+        href: "/users",
+        icon: UserCog,
+      },
+      {
+        label: "Role Management",
+        href: "/roles",
+        icon: ShieldCheck,
+      },
       {
         label: "Reports",
         href: "/reports",

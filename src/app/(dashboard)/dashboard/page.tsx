@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { DateRangeFilter } from "@/components/ui/date-range-filter";
 import {
   Area,
   AreaChart,
@@ -111,10 +112,12 @@ const salesData = [
 ];
 
 export default function DashboardPage() {
-  const [timeRange, setTimeRange] = useState<"TODAY" | "7D" | "30D" | "ALL">("30D");
+  const [timeRange, setTimeRange] = useState<"TODAY" | "7D" | "30D" | "CUSTOM" | "ALL">("30D");
+  const [customStartDate, setCustomStartDate] = useState("2026-10-01");
+  const [customEndDate, setCustomEndDate] = useState("2026-10-28");
 
-  const dynamicSales = timeRange === "TODAY" ? "$2,410" : timeRange === "7D" ? "$13,510" : timeRange === "30D" ? "$48,250" : "$183,350";
-  const dynamicProfit = timeRange === "TODAY" ? "$1,320" : timeRange === "7D" ? "$7,390" : timeRange === "30D" ? "$26,410" : "$100,320";
+  const dynamicSales = timeRange === "TODAY" ? "$2,410" : timeRange === "7D" ? "$13,510" : timeRange === "30D" ? "$48,250" : timeRange === "CUSTOM" ? "$31,200" : "$183,350";
+  const dynamicProfit = timeRange === "TODAY" ? "$1,320" : timeRange === "7D" ? "$7,390" : timeRange === "30D" ? "$26,410" : timeRange === "CUSTOM" ? "$17,100" : "$100,320";
 
   const currentStats = stats.map((s) => {
     if (s.title === "Total Sales") return { ...s, value: dynamicSales, description: timeRange === "TODAY" ? "today billing" : s.description };
@@ -125,7 +128,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Page header */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
           <p className="text-sm font-medium text-[var(--primary)]">
             Overview
@@ -140,52 +143,15 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* Clean Time Filter Pills */}
-        <div className="inline-flex rounded-xl border border-[var(--border)] bg-white p-1 text-xs font-medium shadow-2xs">
-          <button
-            type="button"
-            onClick={() => setTimeRange("TODAY")}
-            className={`rounded-lg px-3 py-1.5 transition ${
-              timeRange === "TODAY"
-                ? "bg-[var(--primary)] text-white! shadow-xs"
-                : "text-[var(--muted)] hover:text-[var(--foreground)]"
-            }`}
-          >
-            Today
-          </button>
-          <button
-            type="button"
-            onClick={() => setTimeRange("7D")}
-            className={`rounded-lg px-3 py-1.5 transition ${
-              timeRange === "7D"
-                ? "bg-[var(--primary)] text-white! shadow-xs"
-                : "text-[var(--muted)] hover:text-[var(--foreground)]"
-            }`}
-          >
-            Last 7 Days
-          </button>
-          <button
-            type="button"
-            onClick={() => setTimeRange("30D")}
-            className={`rounded-lg px-3 py-1.5 transition ${
-              timeRange === "30D"
-                ? "bg-[var(--primary)] text-white! shadow-xs"
-                : "text-[var(--muted)] hover:text-[var(--foreground)]"
-            }`}
-          >
-            Last 30 Days
-          </button>
-          <button
-            type="button"
-            onClick={() => setTimeRange("ALL")}
-            className={`rounded-lg px-3 py-1.5 transition ${
-              timeRange === "ALL"
-                ? "bg-[var(--primary)] text-white! shadow-xs"
-                : "text-[var(--muted)] hover:text-[var(--foreground)]"
-            }`}
-          >
-            All Time
-          </button>
+        <div className="shrink-0">
+          <DateRangeFilter
+            value={timeRange}
+            onChange={setTimeRange}
+            startDate={customStartDate}
+            endDate={customEndDate}
+            onStartDateChange={setCustomStartDate}
+            onEndDateChange={setCustomEndDate}
+          />
         </div>
       </div>
 
