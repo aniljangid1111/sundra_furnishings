@@ -1,120 +1,144 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
   Calendar,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Download,
   Edit3,
   Eye,
   FilePlus2,
-  Filter,
   MoreHorizontal,
   Search,
   Store,
   Trash2,
 } from "lucide-react";
-import { initialInvoices } from "@/features/invoices/invoice.data";
-import type { Invoice, InvoicePaymentStatus, InvoiceStatus } from "@/features/invoices/invoice.types";
+import {
+  getInvoicesApi,
+  deleteInvoiceApi,
+  type InvoiceKPI,
+} from "@/lib/api/invoice.api";
+import { getSalesChannelsApi } from "@/lib/api/salesChannel.api";
+import type { SalesChannel } from "@/features/sales-channels/sales-channel.types";
+import type {
+  Invoice,
+  InvoicePaymentStatus,
+  InvoiceStatus,
+} from "@/features/invoices/invoice.types";
 import { downloadInvoicePdf } from "@/lib/pdf-export";
 import { DateRangeFilter } from "@/components/ui/date-range-filter";
+import { CountUp } from "@/components/ui/count-up";
+import { PermissionGate } from "@/lib/auth/permission-gate";
 
 type TimeRange = "TODAY" | "7D" | "30D" | "CUSTOM" | "ALL";
 
-function isWithinTimeRange(
-  dateStr: string,
-  range: TimeRange,
-  customStart?: string,
-  customEnd?: string
-): boolean {
-  if (range === "ALL") return true;
-  if (!dateStr) return true;
-  const d = new Date(dateStr);
-  const now = new Date();
-  const anchorTime = now.getFullYear() >= 2026 ? now.getTime() : new Date("2026-10-18T23:59:59Z").getTime();
-  const diffDays = Math.abs(anchorTime - d.getTime()) / (1000 * 60 * 60 * 24);
-
-  if (range === "TODAY") {
-    return dateStr.startsWith("2026-10-18") || d.toDateString() === now.toDateString();
-  }
-  if (range === "7D") {
-    return diffDays <= 7 || dateStr.startsWith("2026-10-1");
-  }
-  if (range === "30D") {
-    return diffDays <= 30 || dateStr.startsWith("2026-10") || dateStr.startsWith("2026-09");
-  }
-  if (range === "CUSTOM") {
-    if (!customStart && !customEnd) return true;
-    const time = new Date(dateStr).getTime();
-    if (customStart && time < new Date(customStart).getTime()) return false;
-    if (customEnd && time > new Date(`${customEnd}T23:59:59`).getTime()) return false;
-    return true;
-  }
-  return true;
-}
-
 export default function InvoicesPage() {
-  const [invoices, setInvoices] = useState<Invoice[]>(initialInvoices);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [channels, setChannels] = useState<SalesChannel[]>([]);
+  const [kpi, setKpi] = useState<InvoiceKPI | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Filters & Pagination
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [paymentFilter, setPaymentFilter] = useState<string>("ALL");
   const [channelFilter, setChannelFilter] = useState<string>("ALL");
   const [timeRange, setTimeRange] = useState<TimeRange>("ALL");
-  const [customStartDate, setCustomStartDate] = useState("2026-10-01");
-  const [customEndDate, setCustomEndDate] = useState("2026-10-28");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
-  // Channels for filter
-  const channels = Array.from(new Set(invoices.map((inv) => inv.salesChannelName)));
-
-  // Filtered invoices based on search, status, channel, and time range
-  const filteredInvoices = invoices.filter((inv) => {
-    const matchesSearch =
-      inv.invoiceNumber.toLowerCase().includes(search.toLowerCase()) ||
-      inv.buyerName.toLowerCase().includes(search.toLowerCase()) ||
-      (inv.externalOrderId && inv.externalOrderId.toLowerCase().includes(search.toLowerCase()));
-
-    const matchesStatus = statusFilter === "ALL" || inv.status === statusFilter;
-    const matchesPayment = paymentFilter === "ALL" || inv.paymentStatus === paymentFilter;
-    const matchesChannel = channelFilter === "ALL" || inv.salesChannelName === channelFilter;
-    const matchesTime = isWithinTimeRange(inv.invoiceDate, timeRange, customStartDate, customEndDate);
-
-    return matchesSearch && matchesStatus && matchesPayment && matchesChannel && matchesTime;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    limit: 10,
+    totalItems: 0,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
   });
 
-  // Summary statistics calculated from active time-filtered data
-  const totalCount = filteredInvoices.length;
-  const totalValue = filteredInvoices.reduce((sum, inv) => sum + inv.grandTotal, 0);
+  // Load sales channels
+  useEffect(() => {
+    async function loadChannels() {
+      try {
+        const res = await getSalesChannelsApi({ limit: 100 });
+        if (res.success && res.data) setChannels(res.data);
+      } catch (err) {
+        console.error("Failed to load sales channels", err);
+      }
+    }
+    loadChannels();
+  }, []);
 
-  const paidInvoices = filteredInvoices.filter((inv) => inv.paymentStatus === "PAID");
-  const totalPaid = paidInvoices.reduce((sum, inv) => sum + inv.amountPaid, 0);
-
-  const pendingInvoices = filteredInvoices.filter(
-    (inv) => inv.paymentStatus === "PENDING" || inv.paymentStatus === "PARTIALLY_PAID"
-  );
-  const totalPending = pendingInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
-
-  const overdueInvoices = filteredInvoices.filter((inv) => inv.paymentStatus === "OVERDUE");
-  const totalOverdue = overdueInvoices.reduce((sum, inv) => sum + inv.balanceDue, 0);
-
-  const handleDownloadInvoice = async (invoiceId: number) => {
-    const inv = invoices.find((item) => item.id === invoiceId);
-    if (!inv) return;
+  // Fetch invoices from backend
+  const fetchInvoices = async (page = 1) => {
+    setIsLoading(true);
     try {
-      await downloadInvoicePdf(inv);
+      const res = await getInvoicesApi({
+        status: statusFilter !== "ALL" ? statusFilter : undefined,
+        paymentStatus: paymentFilter !== "ALL" ? paymentFilter : undefined,
+        salesChannel: channelFilter !== "ALL" ? channelFilter : undefined,
+        search: search.trim() || undefined,
+        timeRange: timeRange !== "ALL" ? timeRange : undefined,
+        startDate: timeRange === "CUSTOM" && customStartDate ? customStartDate : undefined,
+        endDate: timeRange === "CUSTOM" && customEndDate ? customEndDate : undefined,
+        page,
+        limit: 10,
+      });
+
+      if (res.success && res.data) {
+        setInvoices(res.data);
+        if (res.kpi) setKpi(res.kpi);
+        if (res.pagination) setPagination(res.pagination);
+      } else {
+        setInvoices([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch invoices", err);
+      setInvoices([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchInvoices(currentPage);
+  }, [statusFilter, paymentFilter, channelFilter, timeRange, customStartDate, customEndDate, currentPage]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentPage(1);
+      fetchInvoices(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const handleDownloadInvoice = async (invoice: Invoice) => {
+    try {
+      await downloadInvoicePdf(invoice);
     } catch (err) {
       console.error("Invoice PDF download error:", err);
     }
   };
 
-  const handleCancelInvoice = (id: number, invNum: string) => {
-    if (confirm(`Are you sure you want to cancel invoice ${invNum}? This will void billing and reverse any inventory reservations.`)) {
-      setInvoices((prev) =>
-        prev.map((inv) => (inv.id === id ? { ...inv, status: "CANCELLED" as InvoiceStatus } : inv))
-      );
+  const handleCancelInvoice = async (id: number, invNum: string) => {
+    if (confirm(`Are you sure you want to delete/cancel invoice ${invNum}? This will void the invoice record.`)) {
+      try {
+        const res = await deleteInvoiceApi(id);
+        if (res.success) {
+          fetchInvoices(currentPage);
+        } else {
+          alert(res.message || "Failed to cancel invoice");
+        }
+      } catch (err: any) {
+        alert(err?.message || "Error cancelling invoice");
+      }
     }
   };
 
@@ -137,20 +161,25 @@ export default function InvoicesPage() {
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
           <DateRangeFilter
             value={timeRange}
-            onChange={setTimeRange}
+            onChange={(val) => {
+              setTimeRange(val as TimeRange);
+              setCurrentPage(1);
+            }}
             startDate={customStartDate}
             endDate={customEndDate}
             onStartDateChange={setCustomStartDate}
             onEndDateChange={setCustomEndDate}
           />
 
-          <Link
-            href="/invoices/new"
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 text-xs font-semibold text-white! shadow-xs transition hover:bg-[var(--primary-dark)] whitespace-nowrap"
-          >
-            <FilePlus2 size={16} strokeWidth={1.8} />
-            <span>Create Invoice</span>
-          </Link>
+          <PermissionGate module="invoices" action="create">
+            <Link
+              href="/invoices/new"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 text-xs font-semibold text-white! shadow-xs transition hover:bg-[var(--primary-dark)] whitespace-nowrap"
+            >
+              <FilePlus2 size={16} strokeWidth={1.8} />
+              <span>Create Invoice</span>
+            </Link>
+          </PermissionGate>
         </div>
       </div>
 
@@ -158,28 +187,36 @@ export default function InvoicesPage() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label="Total Billed"
-          value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-          description={`${totalCount} commercial invoices`}
+          value={kpi?.totalValue ?? kpi?.totalRevenue ?? 0}
+          isCurrency
+          isLoading={isLoading}
+          description={`${kpi?.totalCount ?? kpi?.totalInvoices ?? 0} commercial invoices`}
           badge="Gross"
         />
         <SummaryCard
           label="Collected Payments"
-          value={`$${totalPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-          description={`${paidInvoices.length} fully paid invoices`}
+          value={kpi?.totalPaid ?? kpi?.paidAmount ?? 0}
+          isCurrency
+          isLoading={isLoading}
+          description="Total settled receipts"
           badge="Received"
           badgeColor="text-emerald-700 bg-emerald-50"
         />
         <SummaryCard
           label="Outstanding / Due"
-          value={`$${totalPending.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-          description={`${pendingInvoices.length} invoices pending`}
+          value={kpi?.totalPending ?? kpi?.pendingAmount ?? 0}
+          isCurrency
+          isLoading={isLoading}
+          description="Invoices pending payment"
           badge="Receivables"
           badgeColor="text-amber-700 bg-amber-50"
         />
         <SummaryCard
           label="Overdue Receivables"
-          value={`$${totalOverdue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-          description={`${overdueInvoices.length} invoices past due`}
+          value={kpi?.totalOverdue ?? kpi?.overdueAmount ?? 0}
+          isCurrency
+          isLoading={isLoading}
+          description="Invoices past due date"
           badge="Attention"
           badgeColor="text-rose-700 bg-rose-50"
         />
@@ -207,7 +244,10 @@ export default function InvoicesPage() {
             <div className="relative w-36 sm:w-40">
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="form-input appearance-none pr-10"
               >
                 <option value="ALL">All Statuses</option>
@@ -225,7 +265,10 @@ export default function InvoicesPage() {
             <div className="relative w-36 sm:w-40">
               <select
                 value={paymentFilter}
-                onChange={(e) => setPaymentFilter(e.target.value)}
+                onChange={(e) => {
+                  setPaymentFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="form-input appearance-none pr-10"
               >
                 <option value="ALL">All Payments</option>
@@ -244,13 +287,16 @@ export default function InvoicesPage() {
             <div className="relative w-36 sm:w-40">
               <select
                 value={channelFilter}
-                onChange={(e) => setChannelFilter(e.target.value)}
+                onChange={(e) => {
+                  setChannelFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="form-input appearance-none pr-10"
               >
                 <option value="ALL">All Channels</option>
                 {channels.map((ch) => (
-                  <option key={ch} value={ch}>
-                    {ch}
+                  <option key={ch.id} value={ch.name}>
+                    {ch.name}
                   </option>
                 ))}
               </select>
@@ -281,8 +327,14 @@ export default function InvoicesPage() {
             </thead>
 
             <tbody>
-              {filteredInvoices.length > 0 ? (
-                filteredInvoices.map((inv) => (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={10} className="px-5 py-12 text-center text-sm text-[var(--muted)]">
+                    Loading invoices...
+                  </td>
+                </tr>
+              ) : invoices.length > 0 ? (
+                invoices.map((inv) => (
                   <tr
                     key={inv.id}
                     className="border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--muted-background)]/50 transition-colors"
@@ -319,15 +371,15 @@ export default function InvoicesPage() {
                     </td>
 
                     <td className="px-4 py-4 text-right font-semibold text-[var(--foreground)]">
-                      ${inv.grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      ${Number(inv.grandTotal || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                     </td>
 
                     <td className="px-4 py-4 text-right text-xs font-medium text-emerald-700">
-                      ${inv.amountPaid.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      ${Number(inv.amountPaid || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                     </td>
 
                     <td className="px-4 py-4 text-right text-xs font-bold text-amber-700">
-                      ${inv.balanceDue.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      ${Number(inv.balanceDue || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                     </td>
 
                     <td className="px-4 py-4 text-center">
@@ -343,7 +395,7 @@ export default function InvoicesPage() {
                         {/* Direct 1-Click Download PDF outside */}
                         <button
                           type="button"
-                          onClick={() => handleDownloadInvoice(inv.id)}
+                          onClick={() => handleDownloadInvoice(inv)}
                           title="Download Invoice PDF"
                           className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--primary)] hover:bg-white hover:text-[var(--primary)]"
                         >
@@ -375,20 +427,22 @@ export default function InvoicesPage() {
                                 <span>View Document</span>
                               </Link>
 
-                              <Link
-                                href={`/invoices/edit/${inv.id}`}
-                                onClick={() => setOpenMenuId(null)}
-                                className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-[var(--foreground)] hover:bg-[var(--muted-background)]"
-                              >
-                                <Edit3 size={14} className="text-[var(--muted)]" />
-                                <span>Edit Invoice</span>
-                              </Link>
+                              <PermissionGate module="invoices" action="edit">
+                                <Link
+                                  href={`/invoices/edit/${inv.id}`}
+                                  onClick={() => setOpenMenuId(null)}
+                                  className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs text-[var(--foreground)] hover:bg-[var(--muted-background)]"
+                                >
+                                  <Edit3 size={14} className="text-[var(--muted)]" />
+                                  <span>Edit Invoice</span>
+                                </Link>
+                              </PermissionGate>
 
                               <button
                                 type="button"
                                 onClick={() => {
                                   setOpenMenuId(null);
-                                  handleDownloadInvoice(inv.id);
+                                  handleDownloadInvoice(inv);
                                 }}
                                 className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs text-[var(--foreground)] hover:bg-[var(--muted-background)]"
                               >
@@ -396,19 +450,21 @@ export default function InvoicesPage() {
                                 <span>Download PDF</span>
                               </button>
 
-                              {inv.status !== "CANCELLED" && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setOpenMenuId(null);
-                                    handleCancelInvoice(inv.id, inv.invoiceNumber);
-                                  }}
-                                  className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs text-rose-600 hover:bg-rose-50"
-                                >
-                                  <Trash2 size={14} />
-                                  <span>Cancel Invoice</span>
-                                </button>
-                              )}
+                              <PermissionGate module="invoices" action="delete">
+                                {inv.status !== "CANCELLED" && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setOpenMenuId(null);
+                                      handleCancelInvoice(inv.id, inv.invoiceNumber);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg px-3 py-1.5 text-left text-xs text-rose-600 hover:bg-rose-50"
+                                  >
+                                    <Trash2 size={14} />
+                                    <span>Cancel / Delete</span>
+                                  </button>
+                                )}
+                              </PermissionGate>
                             </div>
                           )}
                         </div>
@@ -428,12 +484,33 @@ export default function InvoicesPage() {
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="flex flex-col gap-2 border-t border-[var(--border-light)] px-5 py-3 text-xs text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
-          <span>
-            Showing {filteredInvoices.length} of {invoices.length} invoices
-          </span>
-          <span>Commercial ERP Billing System</span>
+        {/* Dynamic Pagination Footer */}
+        <div className="flex flex-col items-center justify-between gap-3 border-t border-[var(--border-light)] px-5 py-3 sm:flex-row">
+          <p className="text-xs text-[var(--muted)]">
+            Showing {invoices.length} of {pagination.totalItems} invoices (Page {pagination.currentPage} of {pagination.totalPages || 1})
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!pagination.hasPrevPage || isLoading}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)] disabled:opacity-40"
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <span className="text-xs font-medium px-1 text-[var(--muted)]">
+              {pagination.currentPage} / {pagination.totalPages || 1}
+            </span>
+            <button
+              type="button"
+              disabled={!pagination.hasNextPage || isLoading}
+              onClick={() => setCurrentPage((p) => p + 1)}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)] disabled:opacity-40"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       </section>
     </div>
@@ -443,55 +520,95 @@ export default function InvoicesPage() {
 function SummaryCard({
   label,
   value,
+  isCurrency = false,
+  isLoading = false,
   description,
   badge,
   badgeColor = "text-[var(--primary)] bg-[var(--primary-light)]",
 }: {
   label: string;
-  value: string;
+  value: number;
+  isCurrency?: boolean;
+  isLoading?: boolean;
   description: string;
   badge: string;
   badgeColor?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-xs">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">{label}</p>
-        <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${badgeColor}`}>
+        <p className="text-sm font-medium text-[var(--muted)]">{label}</p>
+        <span
+          className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${badgeColor}`}
+        >
           {badge}
         </span>
       </div>
-      <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--foreground)]">{value}</p>
+      <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--foreground)]">
+        <CountUp
+          value={value}
+          prefix={isCurrency ? "$" : ""}
+          decimals={isCurrency ? 2 : 0}
+          isLoading={isLoading}
+        />
+      </p>
       <p className="mt-1 text-xs text-[var(--muted)]">{description}</p>
     </div>
   );
 }
 
-function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
-  const styles: Record<InvoiceStatus, string> = {
-    ISSUED: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    DRAFT: "bg-amber-50 text-amber-700 border-amber-200",
-    CANCELLED: "bg-rose-50 text-rose-700 border-rose-200",
-  };
-
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${styles[status]}`}>
-      {status}
-    </span>
-  );
+function PaymentStatusBadge({ status }: { status: InvoicePaymentStatus }) {
+  switch (status) {
+    case "PAID":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-[var(--success)]">
+          <CheckCircle2 size={12} />
+          Paid
+        </span>
+      );
+    case "PARTIALLY_PAID":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+          <Clock size={12} />
+          Partial
+        </span>
+      );
+    case "PENDING":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+          <Clock size={12} />
+          Pending
+        </span>
+      );
+    case "OVERDUE":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2.5 py-0.5 text-xs font-semibold text-rose-700">
+          <AlertCircle size={12} />
+          Overdue
+        </span>
+      );
+  }
 }
 
-function PaymentStatusBadge({ status }: { status: InvoicePaymentStatus }) {
-  const styles: Record<InvoicePaymentStatus, string> = {
-    PAID: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    PARTIALLY_PAID: "bg-blue-50 text-blue-700 border-blue-200",
-    PENDING: "bg-amber-50 text-amber-700 border-amber-200",
-    OVERDUE: "bg-rose-50 text-rose-700 border-rose-200",
-  };
-
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${styles[status]}`}>
-      {status.replace("_", " ")}
-    </span>
-  );
+function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
+  switch (status) {
+    case "ISSUED":
+      return (
+        <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-[var(--success)]">
+          Issued
+        </span>
+      );
+    case "DRAFT":
+      return (
+        <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-[var(--muted)]">
+          Draft
+        </span>
+      );
+    case "CANCELLED":
+      return (
+        <span className="inline-flex rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">
+          Cancelled
+        </span>
+      );
+  }
 }

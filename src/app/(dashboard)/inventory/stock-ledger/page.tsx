@@ -1,21 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
   ArrowDownLeft,
   ArrowUpRight,
   Boxes,
-  ChevronDown,
-  History,
+  ChevronLeft,
+  ChevronRight,
   RotateCcw,
   Search,
-  SlidersHorizontal,
-  Calendar,
 } from "lucide-react";
-import { initialStockLedger } from "@/features/inventory/inventory.data";
-import { warehouses } from "@/features/warehouses/warehouse.data";
+import { getStockLedgerApi } from "@/lib/api/inventory.api";
+import { getWarehousesApi } from "@/lib/api/warehouse.api";
+import type { Warehouse } from "@/features/warehouses/warehouse.types";
 import { DateRangeFilter } from "@/components/ui/date-range-filter";
 import type {
   StockLedgerEntry,
@@ -24,68 +23,97 @@ import type {
 
 type TimeRange = "TODAY" | "7D" | "30D" | "CUSTOM" | "ALL";
 
-function isWithinTimeRange(dateStr: string, range: TimeRange, customStart?: string, customEnd?: string): boolean {
-  if (range === "ALL") return true;
-  if (!dateStr) return true;
-  const d = new Date(dateStr);
-  const now = new Date();
-  const anchorTime = now.getFullYear() >= 2026 ? now.getTime() : new Date("2026-10-18T23:59:59Z").getTime();
-  const diffDays = Math.abs(anchorTime - d.getTime()) / (1000 * 60 * 60 * 24);
-
-  if (range === "TODAY") {
-    return dateStr.startsWith("2026-10-18") || d.toDateString() === now.toDateString();
-  }
-  if (range === "7D") {
-    return diffDays <= 7 || dateStr.startsWith("2026-10-1");
-  }
-  if (range === "30D") {
-    return diffDays <= 30 || dateStr.startsWith("2026-10") || dateStr.startsWith("2026-09");
-  }
-  if (range === "CUSTOM") {
-    if (!customStart && !customEnd) return true;
-    const time = new Date(dateStr).getTime();
-    if (customStart && time < new Date(customStart).getTime()) return false;
-    if (customEnd && time > new Date(`${customEnd}T23:59:59`).getTime()) return false;
-    return true;
-  }
-  return true;
-}
-
 export default function StockLedgerPage() {
-  const [ledger] = useState<StockLedgerEntry[]>(initialStockLedger);
+  const [ledger, setLedger] = useState<StockLedgerEntry[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Filters & Pagination
   const [search, setSearch] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState<"ALL" | StockMovementType>("ALL");
   const [timeRange, setTimeRange] = useState<TimeRange>("ALL");
-  const [customStartDate, setCustomStartDate] = useState("2026-10-01");
-  const [customEndDate, setCustomEndDate] = useState("2026-10-28");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    limit: 15,
+    totalItems: 0,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+  });
 
-  const filteredEntries = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  // Load warehouses
+  useEffect(() => {
+    async function loadWarehouses() {
+      try {
+        const res = await getWarehousesApi({ limit: 100 });
+        if (res.success && res.data) setWarehouses(res.data);
+      } catch (err) {
+        console.error("Failed to load warehouses", err);
+      }
+    }
+    loadWarehouses();
+  }, []);
 
-    return ledger.filter((entry) => {
-      const matchesSearch =
-        !q ||
-        entry.productName.toLowerCase().includes(q) ||
-        entry.sku.toLowerCase().includes(q) ||
-        entry.referenceDocument.toLowerCase().includes(q) ||
-        (entry.notes && entry.notes.toLowerCase().includes(q));
+  // Fetch live ledger
+  const fetchLedger = async (page = 1) => {
+    setIsLoading(true);
+    try {
+      const res = await getStockLedgerApi({
+        warehouseId: warehouseFilter !== "ALL" ? warehouseFilter : undefined,
+        movementType: typeFilter !== "ALL" ? typeFilter : undefined,
+        search: search.trim() || undefined,
+        timeRange: timeRange !== "ALL" ? timeRange : undefined,
+        startDate: timeRange === "CUSTOM" && customStartDate ? customStartDate : undefined,
+        endDate: timeRange === "CUSTOM" && customEndDate ? customEndDate : undefined,
+        page,
+        limit: 15,
+      });
 
-      const matchesWarehouse =
-        warehouseFilter === "ALL" ||
-        String(entry.warehouseId) === warehouseFilter;
+      if (res.success && res.data) {
+        setLedger(res.data);
+        if (res.pagination) setPagination(res.pagination);
+      } else {
+        setLedger([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch ledger", err);
+      setLedger([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-      const matchesType =
-        typeFilter === "ALL" || entry.movementType === typeFilter;
+  useEffect(() => {
+    fetchLedger(currentPage);
+  }, [warehouseFilter, typeFilter, timeRange, customStartDate, customEndDate, currentPage]);
 
-      const matchesTime = isWithinTimeRange(entry.date, timeRange, customStartDate, customEndDate);
-
-      return matchesSearch && matchesWarehouse && matchesType && matchesTime;
-    });
-  }, [ledger, search, warehouseFilter, typeFilter, timeRange]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentPage(1);
+      fetchLedger(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const isFiltered =
-    search.trim() !== "" || warehouseFilter !== "ALL" || typeFilter !== "ALL";
+    search.trim() !== "" ||
+    warehouseFilter !== "ALL" ||
+    typeFilter !== "ALL" ||
+    timeRange !== "ALL";
+
+  const handleResetFilters = () => {
+    setSearch("");
+    setWarehouseFilter("ALL");
+    setTypeFilter("ALL");
+    setTimeRange("ALL");
+    setCustomStartDate("");
+    setCustomEndDate("");
+    setCurrentPage(1);
+  };
 
   return (
     <div className="space-y-6">
@@ -113,7 +141,10 @@ export default function StockLedgerPage() {
         <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
           <DateRangeFilter
             value={timeRange}
-            onChange={setTimeRange}
+            onChange={(val) => {
+              setTimeRange(val as TimeRange);
+              setCurrentPage(1);
+            }}
             startDate={customStartDate}
             endDate={customEndDate}
             onStartDateChange={setCustomStartDate}
@@ -131,7 +162,7 @@ export default function StockLedgerPage() {
       </div>
 
       {/* Ledger Table Card */}
-      <div className="rounded-2xl border border-[var(--border)] bg-white">
+      <div className="rounded-2xl border border-[var(--border)] bg-white shadow-xs">
         {/* Filters */}
         <div className="flex flex-col gap-3 border-b border-[var(--border-light)] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative flex-1 sm:max-w-xs">
@@ -150,7 +181,10 @@ export default function StockLedgerPage() {
           <div className="flex flex-wrap items-center gap-2.5">
             <select
               value={warehouseFilter}
-              onChange={(e) => setWarehouseFilter(e.target.value)}
+              onChange={(e) => {
+                setWarehouseFilter(e.target.value);
+                setCurrentPage(1);
+              }}
               className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-xs outline-none transition focus:border-[var(--primary)]"
               aria-label="Filter by warehouse"
             >
@@ -164,9 +198,10 @@ export default function StockLedgerPage() {
 
             <select
               value={typeFilter}
-              onChange={(e) =>
-                setTypeFilter(e.target.value as "ALL" | StockMovementType)
-              }
+              onChange={(e) => {
+                setTypeFilter(e.target.value as "ALL" | StockMovementType);
+                setCurrentPage(1);
+              }}
               className="h-10 rounded-xl border border-[var(--border)] bg-white px-3 text-xs outline-none transition focus:border-[var(--primary)]"
               aria-label="Filter by movement type"
             >
@@ -180,11 +215,7 @@ export default function StockLedgerPage() {
             {isFiltered && (
               <button
                 type="button"
-                onClick={() => {
-                  setSearch("");
-                  setWarehouseFilter("ALL");
-                  setTypeFilter("ALL");
-                }}
+                onClick={handleResetFilters}
                 className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-[var(--border)] bg-white px-3 text-xs font-medium text-[var(--muted)] hover:bg-[var(--muted-background)]"
               >
                 <RotateCcw size={13} />
@@ -212,65 +243,71 @@ export default function StockLedgerPage() {
             </thead>
 
             <tbody className="divide-y divide-[var(--border-light)]">
-              {filteredEntries.map((entry) => {
-                const isPositive = entry.quantityChange > 0;
+              {isLoading ? (
+                <tr>
+                  <td colSpan={9} className="px-5 py-12 text-center text-sm text-[var(--muted)]">
+                    Loading stock movements...
+                  </td>
+                </tr>
+              ) : ledger.length > 0 ? (
+                ledger.map((entry) => {
+                  const isPositive = Number(entry.quantityChange) > 0;
 
-                return (
-                  <tr key={entry.id} className="transition hover:bg-[#fafcfb]">
-                    <td className="px-5 py-4 font-mono text-xs text-[var(--muted)]">
-                      {entry.date}
-                    </td>
+                  return (
+                    <tr key={entry.id} className="transition hover:bg-[#fafcfb]">
+                      <td className="px-5 py-4 font-mono text-xs text-[var(--muted)]">
+                        {entry.date}
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <p className="font-medium text-[var(--foreground)]">{entry.productName}</p>
-                      <p className="font-mono text-xs text-[var(--muted)]">{entry.sku}</p>
-                    </td>
+                      <td className="px-5 py-4">
+                        <p className="font-medium text-[var(--foreground)]">{entry.productName}</p>
+                        <p className="font-mono text-xs text-[var(--muted)]">{entry.sku}</p>
+                      </td>
 
-                    <td className="px-5 py-4 text-xs text-[var(--muted)]">
-                      {entry.warehouseName}
-                    </td>
+                      <td className="px-5 py-4 text-xs text-[var(--muted)]">
+                        {entry.warehouseName}
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <MovementTypeBadge type={entry.movementType} />
-                    </td>
+                      <td className="px-5 py-4">
+                        <MovementTypeBadge type={entry.movementType} />
+                      </td>
 
-                    <td className="px-5 py-4 font-mono text-xs font-semibold">
-                      {entry.referenceDocument}
-                    </td>
+                      <td className="px-5 py-4 font-mono text-xs font-semibold">
+                        {entry.referenceDocument}
+                      </td>
 
-                    <td className="px-5 py-4 text-center font-semibold">
-                      <span
-                        className={`inline-flex items-center gap-0.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          isPositive
-                            ? "bg-emerald-50 text-[var(--success)]"
-                            : "bg-red-50 text-[var(--danger)]"
-                        }`}
-                      >
-                        {isPositive ? (
-                          <ArrowDownLeft size={13} />
-                        ) : (
-                          <ArrowUpRight size={13} />
-                        )}
-                        {isPositive ? `+${entry.quantityChange}` : entry.quantityChange}
-                      </span>
-                    </td>
+                      <td className="px-5 py-4 text-center font-semibold">
+                        <span
+                          className={`inline-flex items-center gap-0.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                            isPositive
+                              ? "bg-emerald-50 text-[var(--success)]"
+                              : "bg-red-50 text-[var(--danger)]"
+                          }`}
+                        >
+                          {isPositive ? (
+                            <ArrowDownLeft size={13} />
+                          ) : (
+                            <ArrowUpRight size={13} />
+                          )}
+                          {isPositive ? `+${entry.quantityChange}` : entry.quantityChange}
+                        </span>
+                      </td>
 
-                    <td className="px-5 py-4 text-center text-xs text-[var(--muted)]">
-                      {entry.previousBalance}
-                    </td>
+                      <td className="px-5 py-4 text-center text-xs text-[var(--muted)]">
+                        {entry.previousBalance}
+                      </td>
 
-                    <td className="px-5 py-4 text-center font-semibold text-[var(--foreground)]">
-                      {entry.newBalance}
-                    </td>
+                      <td className="px-5 py-4 text-center font-semibold text-[var(--foreground)]">
+                        {entry.newBalance}
+                      </td>
 
-                    <td className="px-5 py-4 text-xs text-[var(--muted)] max-w-xs truncate">
-                      {entry.notes || "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {filteredEntries.length === 0 && (
+                      <td className="px-5 py-4 text-xs text-[var(--muted)] max-w-xs truncate">
+                        {entry.notes || "—"}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
                 <tr>
                   <td colSpan={9} className="px-5 py-12 text-center text-sm text-[var(--muted)]">
                     No ledger entries match your filter.
@@ -281,11 +318,33 @@ export default function StockLedgerPage() {
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="border-t border-[var(--border-light)] px-5 py-3">
+        {/* Pagination Footer */}
+        <div className="flex flex-col items-center justify-between gap-3 border-t border-[var(--border-light)] px-5 py-3 sm:flex-row">
           <p className="text-xs text-[var(--muted)]">
-            Showing {filteredEntries.length} of {ledger.length} movement records
+            Showing {ledger.length} of {pagination.totalItems} entries (Page {pagination.currentPage} of {pagination.totalPages || 1})
           </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!pagination.hasPrevPage || isLoading}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)] disabled:opacity-40"
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <span className="text-xs font-medium px-1 text-[var(--muted)]">
+              {pagination.currentPage} / {pagination.totalPages || 1}
+            </span>
+            <button
+              type="button"
+              disabled={!pagination.hasNextPage || isLoading}
+              onClick={() => setCurrentPage((p) => p + 1)}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)] disabled:opacity-40"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       </div>
     </div>

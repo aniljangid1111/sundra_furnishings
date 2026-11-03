@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -21,14 +21,16 @@ import {
   UploadCloud,
   Warehouse as WarehouseIcon,
 } from "lucide-react";
-import { products } from "@/features/products/product.data";
-import { purchases } from "@/features/purchases/purchase.data";
-import { suppliers } from "@/features/suppliers/supplier.data";
-import { warehouses } from "@/features/warehouses/warehouse.data";
-import {
-  calculateLandedCosts,
-  initialImports,
-} from "./import.data";
+import { getProductsApi } from "@/lib/api/product.api";
+import type { Product } from "@/features/products/product.types";
+import { getPurchasesApi } from "@/lib/api/purchase.api";
+import type { Purchase } from "@/features/purchases/purchase.types";
+import { getSuppliersApi } from "@/lib/api/supplier.api";
+import type { Supplier } from "@/features/suppliers/supplier.types";
+import { getWarehousesApi } from "@/lib/api/warehouse.api";
+import type { Warehouse } from "@/features/warehouses/warehouse.types";
+import { createImportApi, updateImportApi } from "@/lib/api/import.api";
+import { calculateLandedCosts } from "./import.data";
 import type {
   AllocationMethod,
   ExpenseType,
@@ -46,6 +48,33 @@ interface ImportFormProps {
 export function ImportForm({ mode, importData }: ImportFormProps) {
   const router = useRouter();
   const isEdit = mode === "edit";
+
+  // Dynamic dropdown lists
+  const [productsList, setProductsList] = useState<Product[]>([]);
+  const [purchasesList, setPurchasesList] = useState<Purchase[]>([]);
+  const [suppliersList, setSuppliersList] = useState<Supplier[]>([]);
+  const [warehousesList, setWarehousesList] = useState<Warehouse[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    async function loadAux() {
+      try {
+        const [prodRes, poRes, suppRes, whRes] = await Promise.all([
+          getProductsApi({ limit: 100 }),
+          getPurchasesApi({ limit: 100 }),
+          getSuppliersApi({ limit: 100 }),
+          getWarehousesApi({ limit: 100 }),
+        ]);
+        if (prodRes.success && prodRes.data) setProductsList(prodRes.data);
+        if (poRes.success && poRes.data) setPurchasesList(poRes.data);
+        if (suppRes.success && suppRes.data) setSuppliersList(suppRes.data);
+        if (whRes.success && whRes.data) setWarehousesList(whRes.data);
+      } catch (err) {
+        console.error("Failed to load import form dependencies", err);
+      }
+    }
+    loadAux();
+  }, []);
 
   const [importNumber, setImportNumber] = useState(
     importData?.importNumber ?? `IMP-2026-${String(Math.floor(Math.random() * 900 + 104)).padStart(3, "0")}`
@@ -138,14 +167,14 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
   // Handler for linking a purchase order
   const handlePurchaseSelect = (poId: number) => {
     setPurchaseId(poId);
-    const po = purchases.find((p) => p.id === poId);
+    const po = purchasesList.find((p) => p.id === poId);
     if (po) {
       setSupplierId(po.supplierId);
       if (po.supplierInvoiceNumber) setSupplierInvoiceNumber(po.supplierInvoiceNumber);
       setWarehouseId(po.warehouseId);
 
       // Populate items from the purchase
-      const poItems = po.items.map((pi, idx) => ({
+      const poItems = (po.items || []).map((pi: any, idx: number) => ({
         id: idx + 1,
         productId: pi.productId,
         sku: pi.sku,
@@ -207,7 +236,7 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
 
   // Item row operations
   const handleAddItem = () => {
-    const firstProduct = products[0];
+    const firstProduct = productsList[0] || { id: 1, sku: "PRD-01", name: "Product Item", costPrice: 100 };
     setItems((prev) => [
       ...prev,
       {
@@ -216,14 +245,14 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
         sku: firstProduct.sku,
         productName: firstProduct.name,
         quantity: 1,
-        purchaseUnitCost: firstProduct.costPrice,
-        purchaseTotalCost: firstProduct.costPrice,
+        purchaseUnitCost: firstProduct.costPrice || 100,
+        purchaseTotalCost: firstProduct.costPrice || 100,
       },
     ]);
   };
 
   const handleProductChange = (index: number, newProductId: number) => {
-    const prod = products.find((p) => p.id === newProductId);
+    const prod = productsList.find((p) => p.id === newProductId);
     if (!prod) return;
     setItems((prev) => {
       const copy = [...prev];
@@ -232,8 +261,8 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
         productId: prod.id,
         sku: prod.sku,
         productName: prod.name,
-        purchaseUnitCost: prod.costPrice,
-        purchaseTotalCost: copy[index].quantity * prod.costPrice,
+        purchaseUnitCost: prod.costPrice || 0,
+        purchaseTotalCost: copy[index].quantity * (prod.costPrice || 0),
       };
       return copy;
     });
@@ -303,7 +332,7 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
     setExpenseHeads((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setErrorBanner(null);
 
@@ -312,47 +341,67 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
       return;
     }
 
-    const supplier = suppliers.find((s) => s.id === supplierId);
-    const warehouse = warehouses.find((w) => w.id === warehouseId);
-    const purchase = purchases.find((p) => p.id === purchaseId);
+    const supplier = suppliersList.find((s) => s.id === supplierId);
+    const warehouse = warehousesList.find((w) => w.id === warehouseId);
+    const purchase = purchasesList.find((p) => p.id === purchaseId);
 
-    const updatedShipment: ImportShipment = {
-      id: importData?.id ?? initialImports.length + 1,
+    const payload = {
       importNumber,
-      supplierId,
+      supplierId: supplierId || null,
       supplierName: supplier?.companyName ?? "Supplier",
       supplierInvoiceNumber: supplierInvoiceNumber.trim() || undefined,
-      purchaseId,
+      purchaseId: purchaseId || null,
       purchaseNumber: purchase?.purchaseNumber,
       shipmentReference: shipmentReference.trim() || undefined,
       importDate,
       warehouseId,
-      warehouseName: warehouse?.name ?? "Warehouse",
+      warehouseName: warehouse?.name ?? "Main Warehouse",
       status,
-      items: computedItems,
-      expenseHeads,
+      items: computedItems.map((item) => ({
+        productId: item.productId,
+        sku: item.sku,
+        productName: item.productName,
+        quantity: item.quantity,
+        purchaseUnitCost: item.purchaseUnitCost,
+        purchaseTotalCost: item.purchaseTotalCost,
+        allocatedExpense: item.allocatedExpense,
+        totalLandedCost: item.totalLandedCost,
+        landedUnitCost: item.landedUnitCost,
+      })),
+      expenseHeads: expenseHeads.map((exp) => ({
+        type: exp.type,
+        description: exp.description,
+        amount: Number(exp.amount) || 0,
+        allocationMethod: exp.allocationMethod,
+      })),
       totalProductCost,
       totalAdditionalCosts,
       totalLandedCost,
-      documentName: mockFileName ?? undefined,
-      documentExtracted: Boolean(mockFileName),
       notes: notes.trim() || undefined,
-      createdAt: importData?.createdAt ?? new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
 
-    // Update shared array
-    const existingIndex = initialImports.findIndex((i) => i.id === updatedShipment.id);
-    if (existingIndex >= 0) {
-      initialImports[existingIndex] = updatedShipment;
-    } else {
-      initialImports.unshift(updatedShipment);
+    setIsSubmitting(true);
+    try {
+      if (isEdit && importData?.id) {
+        const res = await updateImportApi(importData.id, payload);
+        if (res.success) {
+          router.push("/imports");
+        } else {
+          setErrorBanner(res.message || "Failed to update shipment");
+        }
+      } else {
+        const res = await createImportApi(payload);
+        if (res.success) {
+          router.push("/imports");
+        } else {
+          setErrorBanner(res.message || "Failed to create shipment");
+        }
+      }
+    } catch (err: any) {
+      setErrorBanner(err?.message || "An error occurred while saving import shipment");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setSavedSuccess(true);
-    setTimeout(() => {
-      router.push("/imports");
-    }, 900);
   };
 
   return (
@@ -483,7 +532,7 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
               className="form-input mt-1.5 w-full text-sm"
             >
               <option value="">-- Direct Import (No PO Link) --</option>
-              {purchases.map((p) => (
+              {purchasesList.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.purchaseNumber} — {p.supplierName} (${p.grandTotal.toLocaleString()})
                 </option>
@@ -498,7 +547,7 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
               onChange={(e) => setSupplierId(Number(e.target.value))}
               className="form-input mt-1.5 w-full text-sm"
             >
-              {suppliers.map((s) => (
+              {suppliersList.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.companyName} ({s.supplierCode})
                 </option>
@@ -535,7 +584,7 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
               onChange={(e) => setWarehouseId(Number(e.target.value))}
               className="form-input mt-1.5 w-full text-sm"
             >
-              {warehouses.map((w) => (
+              {warehousesList.map((w) => (
                 <option key={w.id} value={w.id}>
                   {w.name}
                 </option>
@@ -719,7 +768,7 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
                         onChange={(e) => handleProductChange(idx, Number(e.target.value))}
                         className="form-input w-full text-xs font-medium"
                       >
-                        {products.map((p) => (
+                        {productsList.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.name} ({p.sku})
                           </option>
@@ -822,10 +871,11 @@ export function ImportForm({ mode, importData }: ImportFormProps) {
           </Link>
           <button
             type="submit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-6 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)] active:scale-95"
+            disabled={isSubmitting}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-6 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)] active:scale-95 disabled:opacity-50"
           >
             <Save size={16} />
-            <span>Save Landed Cost Calculation</span>
+            <span>{isSubmitting ? "Saving..." : "Save Landed Cost Calculation"}</span>
           </button>
         </div>
       </section>

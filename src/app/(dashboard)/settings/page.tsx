@@ -39,6 +39,7 @@ import {
   TaxSettingsConfig,
   TaxSlab,
 } from "@/features/settings/tax-settings.types";
+import { getSettingsApi, updateSettingsApi } from "@/lib/api/settings.api";
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<"tax" | "company" | "payment">("tax");
@@ -86,6 +87,35 @@ export default function SettingsPage() {
 
     const loadedProfile = getStoredCompanyProfile();
     setProfile(loadedProfile);
+
+    // Also pull live system settings from backend database
+    async function loadBackendSettings() {
+      try {
+        const res = await getSettingsApi();
+        if (res.success && res.data) {
+          const s = res.data;
+          setProfile((prev) => ({
+            ...prev,
+            legalName: s.companyName || prev.legalName,
+            brandName: s.companyName || prev.brandName,
+            tagline: s.tagline || prev.tagline,
+            email: s.email || prev.email,
+            phone: s.phone || prev.phone,
+            website: s.website || prev.website,
+            addressLine1: s.addressLine1 || prev.addressLine1,
+            addressLine2: s.addressLine2 || prev.addressLine2,
+            city: s.city || prev.city,
+            state: s.state || prev.state,
+            zip: s.postalCode || prev.zip,
+            country: s.country || prev.country,
+            logoUrl: s.logoUrl || prev.logoUrl,
+          }));
+        }
+      } catch (err) {
+        console.error("Failed to fetch backend settings:", err);
+      }
+    }
+    loadBackendSettings();
   }, []);
 
   const showToast = (msg: string) => {
@@ -114,6 +144,7 @@ export default function SettingsPage() {
 
     setTaxSettings(updated);
     saveStoredTaxSettings(updated);
+    updateSettingsApi({ defaultTaxRate: rateNum }).catch(() => {});
     showToast(`Default tax rate set to ${rateNum}% for all new invoices.`);
   };
 
@@ -136,6 +167,7 @@ export default function SettingsPage() {
     setManualRateInput(String(target.rate));
     setTaxSettings(updated);
     saveStoredTaxSettings(updated);
+    updateSettingsApi({ defaultTaxRate: target.rate }).catch(() => {});
     showToast(`"${target.name}" is now the default tax rate.`);
   };
 
@@ -375,7 +407,7 @@ export default function SettingsPage() {
     showToast("Logo reset to default");
   };
 
-  const handleSaveCompanyProfile = (e: React.FormEvent) => {
+  const handleSaveCompanyProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     saveStoredCompanyProfile(profile);
 
@@ -386,7 +418,25 @@ export default function SettingsPage() {
     setTaxSettings(updatedTax);
     saveStoredTaxSettings(updatedTax);
 
-    showToast("Company profile saved successfully");
+    try {
+      await updateSettingsApi({
+        companyName: profile.brandName || profile.legalName,
+        tagline: profile.tagline,
+        email: profile.email,
+        phone: profile.phone,
+        website: profile.website,
+        addressLine1: profile.addressLine1,
+        addressLine2: profile.addressLine2,
+        city: profile.city,
+        state: profile.state,
+        postalCode: profile.zip,
+        country: profile.country,
+        logoUrl: profile.logoUrl,
+      });
+      showToast("Company profile saved & synced with backend database!");
+    } catch {
+      showToast("Company profile saved successfully");
+    }
   };
 
   // Math

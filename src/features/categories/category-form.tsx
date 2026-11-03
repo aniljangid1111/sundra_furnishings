@@ -1,13 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import {
+  AlertCircle,
   ArrowLeft,
+  Loader2,
   Save,
   Tag,
 } from "lucide-react";
 
+import {
+  createCategoryApi,
+  updateCategoryApi,
+} from "@/lib/api/category.api";
 import type { Category } from "./category.types";
 
 interface CategoryFormProps {
@@ -19,6 +26,7 @@ export function CategoryForm({
   mode,
   category,
 }: CategoryFormProps) {
+  const router = useRouter();
   const isEdit = mode === "edit";
 
   const [name, setName] = useState(category?.name ?? "");
@@ -30,26 +38,53 @@ export function CategoryForm({
     "ACTIVE" | "INACTIVE"
   >(category?.status ?? "ACTIVE");
 
-  const handleSubmit = (
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const handleSubmit = async (
     event: FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault();
+    setIsSubmitting(true);
+    setErrorMessage(null);
 
-    const formData = {
-      name,
-      code,
-      description,
-      status,
-    };
+    try {
+      if (isEdit && category?.id) {
+        await updateCategoryApi(category.id, {
+          name: name.trim(),
+          code: code.trim().toUpperCase(),
+          description: description.trim() || undefined,
+          status,
+        });
+      } else {
+        await createCategoryApi({
+          name: name.trim(),
+          code: code.trim().toUpperCase(),
+          description: description.trim() || undefined,
+          status,
+        });
+      }
 
-    console.log(
-      isEdit ? "Update category:" : "Create category:",
-      formData,
-    );
+      router.push("/categories");
+      router.refresh();
+    } catch (err: any) {
+      setErrorMessage(
+        err.message || "Failed to save category. Please try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="mx-auto max-w-4xl">
+      {errorMessage && (
+        <div className="mb-6 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertCircle size={18} className="shrink-0 text-red-600" />
+          <p className="flex-1 font-medium">{errorMessage}</p>
+        </div>
+      )}
+
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <Link
@@ -84,9 +119,14 @@ export function CategoryForm({
           <button
             type="submit"
             form="category-form"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+            disabled={isSubmitting}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)] disabled:opacity-50"
           >
-            <Save size={16} />
+            {isSubmitting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
             {isEdit ? "Save Changes" : "Save Category"}
           </button>
         </div>
@@ -127,6 +167,7 @@ export function CategoryForm({
                 }
                 placeholder="e.g. Furniture"
                 required
+                disabled={isSubmitting}
               />
             </FormField>
 
@@ -147,6 +188,7 @@ export function CategoryForm({
                 placeholder="e.g. FUR"
                 maxLength={20}
                 required
+                disabled={isSubmitting}
               />
             </FormField>
 
@@ -164,6 +206,7 @@ export function CategoryForm({
                       | "INACTIVE",
                   )
                 }
+                disabled={isSubmitting}
               >
                 <option value="ACTIVE">
                   Active
@@ -182,12 +225,13 @@ export function CategoryForm({
               className="md:col-span-2"
             >
               <textarea
-                className="min-h-[120px] w-full resize-y rounded-[10px] border border-[var(--border)] bg-white px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
+                className="min-h-[120px] w-full resize-y rounded-[10px] border border-[var(--border)] bg-white px-3 py-2.5 text-sm text-[var(--foreground)] outline-none transition focus:border-[var(--primary)] disabled:opacity-50"
                 value={description}
                 onChange={(event) =>
                   setDescription(event.target.value)
                 }
                 placeholder="Describe this category..."
+                disabled={isSubmitting}
               />
             </FormField>
           </div>
@@ -203,9 +247,14 @@ export function CategoryForm({
 
           <button
             type="submit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+            disabled={isSubmitting}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)] disabled:opacity-50"
           >
-            <Save size={16} />
+            {isSubmitting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
 
             {isEdit
               ? "Save Changes"

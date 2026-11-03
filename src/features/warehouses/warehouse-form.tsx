@@ -2,8 +2,10 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { ArrowLeft, Save, Warehouse as WarehouseIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertCircle, ArrowLeft, Loader2, Save } from "lucide-react";
 import type { Warehouse, WarehouseStatus } from "./warehouse.types";
+import { createWarehouseApi, updateWarehouseApi } from "@/lib/api/warehouse.api";
 
 interface WarehouseFormProps {
   mode: "create" | "edit";
@@ -11,10 +13,11 @@ interface WarehouseFormProps {
 }
 
 export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
+  const router = useRouter();
   const isEdit = mode === "edit";
 
   const [warehouseCode, setWarehouseCode] = useState(
-    warehouse?.warehouseCode ?? "",
+    warehouse?.warehouseCode ?? ""
   );
   const [name, setName] = useState(warehouse?.name ?? "");
   const [address, setAddress] = useState(warehouse?.address ?? "");
@@ -22,41 +25,60 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
   const [state, setState] = useState(warehouse?.state ?? "");
   const [postalCode, setPostalCode] = useState(warehouse?.postalCode ?? "");
   const [country, setCountry] = useState(
-    warehouse?.country ?? "United States",
+    warehouse?.country ?? "United States"
   );
   const [status, setStatus] = useState<WarehouseStatus>(
-    warehouse?.status ?? "ACTIVE",
+    warehouse?.status ?? "ACTIVE"
   );
   const [notes, setNotes] = useState(warehouse?.notes ?? "");
 
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const validate = () => {
-    const errs: Record<string, string> = {};
-    if (!warehouseCode.trim()) errs.warehouseCode = "Code is required.";
-    if (!name.trim()) errs.name = "Warehouse name is required.";
-    if (!address.trim()) errs.address = "Address is required.";
-    if (!city.trim()) errs.city = "City is required.";
-    if (!state.trim()) errs.state = "State is required.";
-    if (!postalCode.trim()) errs.postalCode = "Postal code is required.";
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
-
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!validate()) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
 
-    setFeedbackMessage(
-      isEdit
-        ? "Warehouse updated successfully. Note: Backend API persistence is pending implementation."
-        : "Warehouse registered successfully. Note: Backend API persistence is pending implementation.",
-    );
+    const payload = {
+      warehouseCode: warehouseCode.trim().toUpperCase(),
+      name: name.trim(),
+      address: address.trim(),
+      city: city.trim(),
+      state: state.trim().toUpperCase(),
+      postalCode: postalCode.trim(),
+      country: country.trim(),
+      status,
+      notes: notes.trim(),
+    };
+
+    try {
+      if (isEdit && warehouse?.id) {
+        await updateWarehouseApi(warehouse.id, payload);
+      } else {
+        await createWarehouseApi(payload);
+      }
+
+      router.push("/inventory/warehouses");
+      router.refresh();
+    } catch (err: any) {
+      setErrorMessage(
+        err.message || "Failed to save warehouse. Please check your inputs."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
+      {errorMessage && (
+        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertCircle size={18} className="shrink-0 text-red-600" />
+          <p className="flex-1 font-medium">{errorMessage}</p>
+        </div>
+      )}
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <Link
@@ -85,19 +107,18 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
           <button
             type="submit"
             form="warehouse-form"
-            className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white! hover:bg-[var(--primary-dark)]"
+            disabled={isSubmitting}
+            className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white! hover:bg-[var(--primary-dark)] disabled:opacity-50"
           >
-            <Save size={16} />
+            {isSubmitting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
             {isEdit ? "Save Changes" : "Save Warehouse"}
           </button>
         </div>
       </div>
-
-      {feedbackMessage && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          {feedbackMessage}
-        </div>
-      )}
 
       <form id="warehouse-form" onSubmit={handleSubmit} className="space-y-6">
         <section className="rounded-xl border border-[var(--border)] bg-white p-5 space-y-5">
@@ -108,15 +129,15 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
               </label>
               <input
                 id="wh-code"
-                className="form-input uppercase"
+                className="form-input uppercase font-mono"
                 value={warehouseCode}
-                onChange={(e) => setWarehouseCode(e.target.value.toUpperCase().replace(/\s/g, ""))}
+                onChange={(e) =>
+                  setWarehouseCode(e.target.value.toUpperCase().replace(/\s/g, ""))
+                }
                 placeholder="e.g. WH-04"
                 required
+                disabled={isSubmitting}
               />
-              {errors.warehouseCode && (
-                <p className="mt-1 text-xs text-[var(--danger)]">{errors.warehouseCode}</p>
-              )}
             </div>
 
             <div>
@@ -130,10 +151,8 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. South Regional Hub"
                 required
+                disabled={isSubmitting}
               />
-              {errors.name && (
-                <p className="mt-1 text-xs text-[var(--danger)]">{errors.name}</p>
-              )}
             </div>
 
             <div className="sm:col-span-2">
@@ -147,10 +166,8 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="Industrial park or street address"
                 required
+                disabled={isSubmitting}
               />
-              {errors.address && (
-                <p className="mt-1 text-xs text-[var(--danger)]">{errors.address}</p>
-              )}
             </div>
 
             <div>
@@ -164,6 +181,7 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
                 onChange={(e) => setCity(e.target.value)}
                 placeholder="City"
                 required
+                disabled={isSubmitting}
               />
             </div>
 
@@ -179,6 +197,7 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
                   onChange={(e) => setState(e.target.value)}
                   placeholder="State"
                   required
+                  disabled={isSubmitting}
                 />
               </div>
 
@@ -193,6 +212,7 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
                   onChange={(e) => setPostalCode(e.target.value)}
                   placeholder="ZIP"
                   required
+                  disabled={isSubmitting}
                 />
               </div>
             </div>
@@ -207,6 +227,7 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
                 value={country}
                 onChange={(e) => setCountry(e.target.value)}
                 required
+                disabled={isSubmitting}
               />
             </div>
 
@@ -219,6 +240,7 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
                 className="form-input"
                 value={status}
                 onChange={(e) => setStatus(e.target.value as WarehouseStatus)}
+                disabled={isSubmitting}
               >
                 <option value="ACTIVE">Active</option>
                 <option value="INACTIVE">Inactive</option>
@@ -235,6 +257,7 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Dock clearance heights, staging bay numbers, security codes..."
+                disabled={isSubmitting}
               />
             </div>
           </div>
@@ -249,8 +272,14 @@ export function WarehouseForm({ mode, warehouse }: WarehouseFormProps) {
           </Link>
           <button
             type="submit"
-            className="rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white! hover:bg-[var(--primary-dark)]"
+            disabled={isSubmitting}
+            className="inline-flex items-center gap-2 rounded-lg bg-[var(--primary)] px-4 py-2 text-sm font-medium text-white! hover:bg-[var(--primary-dark)] disabled:opacity-50"
           >
+            {isSubmitting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
             {isEdit ? "Save Changes" : "Save Warehouse"}
           </button>
         </div>

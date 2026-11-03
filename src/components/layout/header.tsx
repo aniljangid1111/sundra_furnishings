@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { ProfileDrawer, type ProfileData } from "./profile-drawer";
+import { useAuth } from "@/lib/auth/auth-context";
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -22,20 +23,33 @@ interface HeaderProps {
 export function Header({
   onMenuClick,
 }: HeaderProps) {
+  const { user, logout } = useAuth();
   const [search, setSearch] = useState("");
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [logoutNotice, setLogoutNotice] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // User Profile state
+  // User Profile state synced with auth
   const [profile, setProfile] = useState<ProfileData>({
-    firstName: "Sundara",
-    lastName: "Furnishings",
+    firstName: user?.name ? user.name.split(" ")[0] : "Admin",
+    lastName: user?.name ? user.name.split(" ").slice(1).join(" ") : "User",
     contactNumber: "+1 (704) 555-0199",
-    role: "Administrator",
-    email: "admin@sundarafurnishings.com"
+    role: user?.roleTitle || (user?.role === "ADMIN" ? "Administrator" : "Staff"),
+    email: user?.email || "admin@sundarafurnishings.com"
   });
+
+  useEffect(() => {
+    if (user) {
+      const parts = (user.name || "Admin").split(" ");
+      setProfile({
+        firstName: parts[0] || "Admin",
+        lastName: parts.slice(1).join(" ") || "",
+        contactNumber: "+1 (704) 555-0199",
+        role: user.roleTitle || (user.role === "ADMIN" ? "Administrator" : "Staff"),
+        email: user.email || ""
+      });
+    }
+  }, [user]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -55,12 +69,9 @@ export function Header({
     setProfile(updated);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setIsDropdownOpen(false);
-    setLogoutNotice(true);
-    setTimeout(() => {
-      setLogoutNotice(false);
-    }, 4000);
+    await logout();
   };
 
   return (
@@ -191,26 +202,6 @@ export function Header({
           </div>
         </div>
       </header>
-
-      {/* Simulated Logout Banner */}
-      {logoutNotice && (
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-3 rounded-2xl border border-rose-200 bg-white p-4 shadow-xl animate-in slide-in-from-top-3 max-w-sm">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600">
-            <LogOut size={18} />
-          </div>
-          <div className="flex-1">
-            <p className="text-xs font-bold text-slate-800">Session Terminated</p>
-            <p className="text-2xs text-slate-500 mt-0.5">You have been logged out of your session safely.</p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setLogoutNotice(false)}
-            className="text-slate-400 hover:text-slate-600"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
 
       {/* Slide-over Profile Drawer (Right Side) */}
       <ProfileDrawer

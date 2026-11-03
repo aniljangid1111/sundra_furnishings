@@ -1,0 +1,2693 @@
+{
+  "info": {
+    "_postman_id": "sundara-billing-suite-v1",
+    "name": "Sundara Furnishings - Complete Billing & ERP Suite",
+    "description": "Production API Collection for Sundara Furnishings ERP & Billing System. Contains all CRUD endpoints, query parameters, complete JSON payloads for both Create & Update, role-based security, pagination, and KPI support.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string",
+      "description": "Backend API Base URL"
+    },
+    {
+      "key": "authToken",
+      "value": "",
+      "type": "string",
+      "description": "JWT Bearer Token automatically populated on Login"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{authToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01. Authentication & Session",
+      "item": [
+        {
+          "name": "Admin / Staff Login (Auto-saves Bearer Token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ],
+              "query": []
+            },
+            "description": "Authenticates user and returns JWT token. Tests script saves token to {{authToken}} automatically.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@sundarafurnishings.com\",\n  \"password\": \"admin123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  var json = pm.response.json();",
+                  "  if (json.data && json.data.token) {",
+                  "    pm.collectionVariables.set(\"authToken\", json.data.token);",
+                  "    pm.environment.set(\"authToken\", json.data.token);",
+                  "    console.log(\"Auth token auto-saved successfully!\");",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Current Logged-in User Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ],
+              "query": []
+            },
+            "description": "Fetches current session user profile along with role and permissions."
+          },
+          "response": []
+        },
+        {
+          "name": "Register New User (Self-service)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ],
+              "query": []
+            },
+            "description": "Self-service registration endpoint for new accounts.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Aman Verma\",\n  \"email\": \"aman.verma@sundarafurnishings.com\",\n  \"password\": \"Password@123\",\n  \"role\": \"STAFF\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02. Products Management",
+      "item": [
+        {
+          "name": "List Products (With Filters & Pagination)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/products?page=1&limit=10&categoryId=1&status=ACTIVE&channel=Website&stockFilter=LOW_STOCK&search=Chair",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all' for unpaginated)",
+                  "disabled": false
+                },
+                {
+                  "key": "categoryId",
+                  "value": "1",
+                  "description": "Filter by product category ID",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "description": "Status filter: ACTIVE | INACTIVE",
+                  "disabled": true
+                },
+                {
+                  "key": "channel",
+                  "value": "Website",
+                  "description": "Filter products published on specific channel",
+                  "disabled": true
+                },
+                {
+                  "key": "stockFilter",
+                  "value": "LOW_STOCK",
+                  "description": "Filter by stock health: IN_STOCK | LOW_STOCK | OUT_OF_STOCK",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Chair",
+                  "description": "Search term matching name or SKU",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns paginated list of products, inventory stock levels, category relations, and KPI header metrics."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Returns detailed product record including pricing, tax rates, sales channels, and category details."
+          },
+          "response": []
+        },
+        {
+          "name": "Create New Product (Complete Payload)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/products",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products"
+              ],
+              "query": []
+            },
+            "description": "Creates a new product with complete pricing, tax, stock threshold, and channel assignments.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Handcrafted Teak Dining Chair\",\n  \"sku\": \"CHR-TEAK-001\",\n  \"categoryId\": 1,\n  \"uom\": \"PCS\",\n  \"costPrice\": 85,\n  \"sellingPrice\": 165,\n  \"stock\": 45,\n  \"reorderLevel\": 10,\n  \"taxRate\": 8.25,\n  \"status\": \"ACTIVE\",\n  \"imageUrl\": \"https://images.unsplash.com/photo-1592078615290-033ee584e267\",\n  \"salesChannels\": [\n    \"Amazon\",\n    \"Website\",\n    \"Wayfair\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Existing Product (Complete Payload)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Updates all product specifications, pricing, stock levels, and associated sales channels.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Handcrafted Teak Dining Chair - Premium Dark Finish\",\n  \"sku\": \"CHR-TEAK-001\",\n  \"categoryId\": 1,\n  \"uom\": \"PCS\",\n  \"costPrice\": 90,\n  \"sellingPrice\": 175,\n  \"stock\": 50,\n  \"reorderLevel\": 12,\n  \"taxRate\": 8.25,\n  \"status\": \"ACTIVE\",\n  \"imageUrl\": \"https://images.unsplash.com/photo-1592078615290-033ee584e267\",\n  \"salesChannels\": [\n    \"Amazon\",\n    \"Website\",\n    \"Wayfair\",\n    \"Shopify Store\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/products/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "products",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Deletes a product by ID if not bound to active historical orders."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03. Sales Invoices",
+      "item": [
+        {
+          "name": "List Invoices (Date Filters, Pagination & KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices?page=1&limit=10&timeRange=THIS_MONTH&startDate=2026-11-01&endDate=2026-11-30&status=ISSUED&paymentStatus=PAID&search=Rahul",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "timeRange",
+                  "value": "THIS_MONTH",
+                  "description": "Preset: TODAY | 7D | 30D | THIS_MONTH | LAST_MONTH | THIS_YEAR | CUSTOM",
+                  "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-11-01",
+                  "description": "Required if timeRange=CUSTOM (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-11-30",
+                  "description": "Required if timeRange=CUSTOM (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "ISSUED",
+                  "description": "Status filter: DRAFT | ISSUED | CANCELLED",
+                  "disabled": true
+                },
+                {
+                  "key": "paymentStatus",
+                  "value": "PAID",
+                  "description": "Filter: PAID | PARTIALLY_PAID | PENDING | OVERDUE",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Rahul",
+                  "description": "Search customer name, email, invoice # or external order ID",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns paginated sales invoices, date filtered calculations, and total sales KPI metrics."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Invoice by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Retrieves complete single sales invoice record including line items, customer info, and tax calculations."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Sales Invoice (Complete Payload)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices"
+              ],
+              "query": []
+            },
+            "description": "Creates and issues a new sales invoice with automatic invoice numbering and line item stock deduction.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"buyerName\": \"Rahul Sharma\",\n  \"buyerEmail\": \"rahul.sharma@example.com\",\n  \"buyerPhone\": \"+1 (555) 432-1098\",\n  \"salesChannel\": \"Website\",\n  \"salesChannelId\": 1,\n  \"externalOrderId\": \"ORD-2026-5541\",\n  \"billingAddress\": \"100 Broadway St, Suite 400, New York, NY 10005\",\n  \"shippingAddress\": \"100 Broadway St, Suite 400, New York, NY 10005\",\n  \"warehouseId\": 1,\n  \"warehouseName\": \"Central Distribution Center (CDC)\",\n  \"invoiceDate\": \"2026-11-03T10:00:00Z\",\n  \"dueDate\": \"2026-12-03T10:00:00Z\",\n  \"items\": [\n    {\n      \"productId\": 1,\n      \"sku\": \"CHR-TEAK-001\",\n      \"productName\": \"Handcrafted Teak Dining Chair\",\n      \"quantity\": 2,\n      \"unitPrice\": 165,\n      \"discount\": 10,\n      \"taxRate\": 8.25,\n      \"lineTotal\": 320\n    }\n  ],\n  \"subtotal\": 320,\n  \"discountTotal\": 10,\n  \"taxTotal\": 26.4,\n  \"shippingCharges\": 25,\n  \"additionalCharges\": 0,\n  \"grandTotal\": 371.4,\n  \"amountPaid\": 371.4,\n  \"balanceDue\": 0,\n  \"paymentStatus\": \"PAID\",\n  \"paymentMethod\": \"CREDIT_CARD\",\n  \"status\": \"ISSUED\",\n  \"notes\": \"Delivered via Priority Ground Freight.\",\n  \"termsAndConditions\": \"Standard 30-day warranty applies.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Sales Invoice (Complete Payload)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Updates full sales invoice details, customer information, line items, and financial totals.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"buyerName\": \"Rahul Sharma\",\n  \"buyerEmail\": \"rahul.sharma@example.com\",\n  \"buyerPhone\": \"+1 (555) 432-1098\",\n  \"salesChannel\": \"Website\",\n  \"salesChannelId\": 1,\n  \"externalOrderId\": \"ORD-2026-5541\",\n  \"billingAddress\": \"100 Broadway St, Suite 400, New York, NY 10005\",\n  \"shippingAddress\": \"100 Broadway St, Suite 400, New York, NY 10005\",\n  \"warehouseId\": 1,\n  \"warehouseName\": \"Central Distribution Center (CDC)\",\n  \"invoiceDate\": \"2026-11-03T10:00:00Z\",\n  \"dueDate\": \"2026-12-03T10:00:00Z\",\n  \"items\": [\n    {\n      \"productId\": 1,\n      \"sku\": \"CHR-TEAK-001\",\n      \"productName\": \"Handcrafted Teak Dining Chair\",\n      \"quantity\": 4,\n      \"unitPrice\": 165,\n      \"discount\": 20,\n      \"taxRate\": 8.25,\n      \"lineTotal\": 640\n    }\n  ],\n  \"subtotal\": 640,\n  \"discountTotal\": 20,\n  \"taxTotal\": 52.8,\n  \"shippingCharges\": 35,\n  \"additionalCharges\": 0,\n  \"grandTotal\": 727.8,\n  \"amountPaid\": 727.8,\n  \"balanceDue\": 0,\n  \"paymentStatus\": \"PAID\",\n  \"paymentMethod\": \"CREDIT_CARD\",\n  \"status\": \"ISSUED\",\n  \"notes\": \"Customer upgraded order quantity to 4 chairs.\",\n  \"termsAndConditions\": \"Standard 30-day warranty applies.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Invoice",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/invoices/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "invoices",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Removes invoice record and reverses line items if draft/cancelled."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04. Purchase Orders",
+      "item": [
+        {
+          "name": "List Purchase Orders (Date Filters, Pagination & KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchases?page=1&limit=10&timeRange=THIS_MONTH&startDate=2026-11-01&endDate=2026-11-30&status=RECEIVED&supplierId=1&search=Appalachian",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchases"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "timeRange",
+                  "value": "THIS_MONTH",
+                  "description": "Preset: TODAY | 7D | 30D | THIS_MONTH | LAST_MONTH | THIS_YEAR | CUSTOM",
+                  "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-11-01",
+                  "description": "Required if timeRange=CUSTOM (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-11-30",
+                  "description": "Required if timeRange=CUSTOM (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "RECEIVED",
+                  "description": "Status filter: DRAFT | ORDERED | PARTIALLY_RECEIVED | RECEIVED | CANCELLED",
+                  "disabled": true
+                },
+                {
+                  "key": "supplierId",
+                  "value": "1",
+                  "description": "Filter by specific vendor ID",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Appalachian",
+                  "description": "Search vendor name, PO #, container # or invoice #",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns paginated purchase orders with line items, warehouse receiving details, and purchase KPI cards."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Purchase Order by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchases/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchases",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Fetches full purchase order details, supplier contacts, and receiving status."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Purchase Order (Complete Payload)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchases"
+              ],
+              "query": []
+            },
+            "description": "Creates a new purchase order with full item specifications, supplier link, and warehouse allocation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplierId\": 1,\n  \"supplierName\": \"Appalachian Hardwood Mills\",\n  \"warehouseId\": 1,\n  \"warehouseName\": \"Central Distribution Center (CDC)\",\n  \"purchaseDate\": \"2026-11-02T10:00:00Z\",\n  \"expectedDate\": \"2026-11-15T10:00:00Z\",\n  \"supplierInvoiceNumber\": \"INV-AHM-9901\",\n  \"containerNumber\": \"MSCU-123456-7\",\n  \"status\": \"RECEIVED\",\n  \"items\": [\n    {\n      \"productId\": 1,\n      \"sku\": \"BED-001\",\n      \"productName\": \"Cotton Bedsheet Set - Queen\",\n      \"quantity\": 25,\n      \"unitCost\": 120,\n      \"discount\": 0,\n      \"taxRate\": 0,\n      \"lineTotal\": 3000,\n      \"receivedQuantity\": 25\n    }\n  ],\n  \"subtotal\": 3000,\n  \"discount\": 0,\n  \"tax\": 0,\n  \"additionalCharges\": 150,\n  \"grandTotal\": 3150,\n  \"amountPaid\": 3150,\n  \"balanceDue\": 0,\n  \"notes\": \"Delivered to Dock 4. Inspected and verified by inventory manager.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Purchase Order (Complete Payload)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchases/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchases",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Updates purchase order quantities, pricing adjustments, delivery status, and notes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplierId\": 1,\n  \"supplierName\": \"Appalachian Hardwood Mills\",\n  \"warehouseId\": 1,\n  \"warehouseName\": \"Central Distribution Center (CDC)\",\n  \"purchaseDate\": \"2026-11-02T10:00:00Z\",\n  \"expectedDate\": \"2026-11-15T10:00:00Z\",\n  \"supplierInvoiceNumber\": \"INV-AHM-9901-REV\",\n  \"containerNumber\": \"MSCU-123456-7\",\n  \"status\": \"RECEIVED\",\n  \"items\": [\n    {\n      \"productId\": 1,\n      \"sku\": \"BED-001\",\n      \"productName\": \"Cotton Bedsheet Set - Queen\",\n      \"quantity\": 30,\n      \"unitCost\": 115,\n      \"discount\": 50,\n      \"taxRate\": 0,\n      \"lineTotal\": 3400,\n      \"receivedQuantity\": 30\n    }\n  ],\n  \"subtotal\": 3400,\n  \"discount\": 50,\n  \"tax\": 0,\n  \"additionalCharges\": 150,\n  \"grandTotal\": 3500,\n  \"amountPaid\": 3500,\n  \"balanceDue\": 0,\n  \"notes\": \"Updated delivery quantity to 30 sets. Final settlement processed.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Purchase Order",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/purchases/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "purchases",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Cancels and deletes purchase order record by ID."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05. Inventory & Stock Ledger",
+      "item": [
+        {
+          "name": "Get Live Inventory Overview (Pagination & Valuation KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory?page=1&limit=10&warehouseId=1&categoryId=1&stockStatus=LOW_STOCK&search=Bedsheet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "warehouseId",
+                  "value": "1",
+                  "description": "Filter inventory within specific warehouse facility",
+                  "disabled": true
+                },
+                {
+                  "key": "categoryId",
+                  "value": "1",
+                  "description": "Filter products by category",
+                  "disabled": true
+                },
+                {
+                  "key": "stockStatus",
+                  "value": "LOW_STOCK",
+                  "description": "Status: IN_STOCK | LOW_STOCK | OUT_OF_STOCK",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Bedsheet",
+                  "description": "Search product name or SKU",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns current stock counts across warehouses, valuation totals, and health status indicators."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stock Ledger / Movement Audit Trail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/ledger?page=1&limit=10&timeRange=THIS_MONTH&startDate=2026-11-01&endDate=2026-11-30&movementType=PURCHASE&search=BED-001",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                "ledger"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "timeRange",
+                  "value": "THIS_MONTH",
+                  "description": "Preset: TODAY | 7D | 30D | THIS_MONTH | LAST_MONTH | THIS_YEAR | CUSTOM",
+                  "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-11-01",
+                  "description": "Required if timeRange=CUSTOM (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-11-30",
+                  "description": "Required if timeRange=CUSTOM (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "movementType",
+                  "value": "PURCHASE",
+                  "description": "Filter: PURCHASE | SALE | ADJUSTMENT | IMPORT | RETURN",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "BED-001",
+                  "description": "Search SKU or reference document number",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Audit trail of every stock increase, decrease, adjustment, and reference document."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Low Stock & Reorder Alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/alerts?warehouseId=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                "alerts"
+              ],
+              "query": [
+                {
+                  "key": "warehouseId",
+                  "value": "1",
+                  "description": "Filter alerts for specific warehouse",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns products currently below reorder safety thresholds."
+          },
+          "response": []
+        },
+        {
+          "name": "Post Manual Stock Adjustment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/inventory/adjustments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "inventory",
+                "adjustments"
+              ],
+              "query": []
+            },
+            "description": "Adjusts physical inventory (action: ADD | DEDUCT | SET) and logs movement to stock ledger.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productId\": 1,\n  \"warehouseId\": 1,\n  \"action\": \"ADD\",\n  \"quantity\": 10,\n  \"reason\": \"Stock audit discrepancy recount\",\n  \"referenceDocument\": \"AUDIT-2026-Q4\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06. Overseas Imports & Landed Cost",
+      "item": [
+        {
+          "name": "List Import Shipments (Date Filters, Pagination & KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/imports?page=1&limit=10&timeRange=THIS_MONTH&startDate=2026-11-01&endDate=2026-11-30&status=PROCESSING&search=OCN-SEA",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "imports"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "timeRange",
+                  "value": "THIS_MONTH",
+                  "description": "Preset: TODAY | 7D | 30D | THIS_MONTH | LAST_MONTH | THIS_YEAR | CUSTOM",
+                  "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-11-01",
+                  "description": "Required if timeRange=CUSTOM (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-11-30",
+                  "description": "Required if timeRange=CUSTOM (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "PROCESSING",
+                  "description": "Status: DRAFT | PROCESSING | REVIEW_REQUIRED | COMPLETED | CANCELLED",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "OCN-SEA",
+                  "description": "Search import #, shipment ref, or container",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns container shipments, landed cost calculations, customs duties, and import KPI cards."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Import Shipment by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/imports/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "imports",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Fetches individual container shipment, duty expense breakdown, and unit landed cost allocations."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Import Shipment (Complete Payload)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/imports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "imports"
+              ],
+              "query": []
+            },
+            "description": "Creates an import shipment record with expense heads (freight, customs, insurance) and allocates landed costs.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"importNumber\": \"IMP-2026-003\",\n  \"supplierId\": 1,\n  \"supplierName\": \"Appalachian Hardwood Mills\",\n  \"supplierInvoiceNumber\": \"INV-AHM-9901\",\n  \"purchaseId\": 1,\n  \"purchaseNumber\": \"PO-2026-001\",\n  \"shipmentReference\": \"OCN-SEA-8841\",\n  \"importDate\": \"2026-11-01T08:00:00Z\",\n  \"warehouseId\": 1,\n  \"warehouseName\": \"Central Distribution Center (CDC)\",\n  \"status\": \"PROCESSING\",\n  \"items\": [\n    {\n      \"productId\": 1,\n      \"sku\": \"CHR-TEAK-001\",\n      \"productName\": \"Handcrafted Teak Dining Chair\",\n      \"quantity\": 50,\n      \"purchaseUnitCost\": 85,\n      \"purchaseTotalCost\": 4250,\n      \"allocatedExpense\": 350,\n      \"totalLandedCost\": 4600,\n      \"landedUnitCost\": 92\n    }\n  ],\n  \"expenseHeads\": [\n    {\n      \"type\": \"FREIGHT\",\n      \"description\": \"Ocean Freight Shanghai to Long Beach\",\n      \"amount\": 250,\n      \"allocationMethod\": \"BY_VALUE\"\n    },\n    {\n      \"type\": \"CUSTOMS\",\n      \"description\": \"US Customs Clearance & Tariffs\",\n      \"amount\": 100,\n      \"allocationMethod\": \"BY_VALUE\"\n    }\n  ],\n  \"totalProductCost\": 4250,\n  \"totalAdditionalCosts\": 350,\n  \"totalLandedCost\": 4600,\n  \"documentName\": \"BillOfLading_MSCU123.pdf\",\n  \"documentExtracted\": true,\n  \"notes\": \"Container cleared customs at Port of Long Beach.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Import Shipment (Complete Payload)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/imports/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "imports",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Updates container shipment items, customs duties, final landed cost recalculations, and status.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"importNumber\": \"IMP-2026-003\",\n  \"supplierId\": 1,\n  \"supplierName\": \"Appalachian Hardwood Mills\",\n  \"supplierInvoiceNumber\": \"INV-AHM-9901\",\n  \"purchaseId\": 1,\n  \"purchaseNumber\": \"PO-2026-001\",\n  \"shipmentReference\": \"OCN-SEA-8841\",\n  \"importDate\": \"2026-11-01T08:00:00Z\",\n  \"warehouseId\": 1,\n  \"warehouseName\": \"Central Distribution Center (CDC)\",\n  \"status\": \"COMPLETED\",\n  \"items\": [\n    {\n      \"productId\": 1,\n      \"sku\": \"CHR-TEAK-001\",\n      \"productName\": \"Handcrafted Teak Dining Chair\",\n      \"quantity\": 50,\n      \"purchaseUnitCost\": 85,\n      \"purchaseTotalCost\": 4250,\n      \"allocatedExpense\": 400,\n      \"totalLandedCost\": 4650,\n      \"landedUnitCost\": 93\n    }\n  ],\n  \"expenseHeads\": [\n    {\n      \"type\": \"FREIGHT\",\n      \"description\": \"Ocean Freight Shanghai to Long Beach\",\n      \"amount\": 250,\n      \"allocationMethod\": \"BY_VALUE\"\n    },\n    {\n      \"type\": \"CUSTOMS\",\n      \"description\": \"US Customs Clearance & Tariffs\",\n      \"amount\": 100,\n      \"allocationMethod\": \"BY_VALUE\"\n    },\n    {\n      \"type\": \"PORT_HANDLING\",\n      \"description\": \"Terminal Demurrage & Drayage\",\n      \"amount\": 50,\n      \"allocationMethod\": \"BY_VALUE\"\n    }\n  ],\n  \"totalProductCost\": 4250,\n  \"totalAdditionalCosts\": 400,\n  \"totalLandedCost\": 4650,\n  \"documentName\": \"BillOfLading_MSCU123.pdf\",\n  \"documentExtracted\": true,\n  \"notes\": \"Shipment received at warehouse, items stocked into inventory with true landed cost.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Import Shipment",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/imports/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "imports",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Deletes container shipment record by ID."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07. User Management",
+      "item": [
+        {
+          "name": "List Users (With Role Details, Pagination & KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users?page=1&limit=10&status=ACTIVE&role=ADMIN&search=Deepak",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "description": "Status: ACTIVE | INACTIVE",
+                  "disabled": true
+                },
+                {
+                  "key": "role",
+                  "value": "ADMIN",
+                  "description": "Filter users by role identifier",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Deepak",
+                  "description": "Search user name, email, or mobile",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns platform users, active statuses, assigned system roles, and user KPI overview."
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Fetches individual user account and permission assignments."
+          },
+          "response": []
+        },
+        {
+          "name": "Create User (Complete Payload - Admin Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ],
+              "query": []
+            },
+            "description": "Provisions a new staff or admin user account with hashed password and role assignment.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Deepak Choudhary\",\n  \"email\": \"deepak.c@sundarafurnishings.com\",\n  \"mobile\": \"+1 (555) 789-2345\",\n  \"password\": \"UserSecure@123\",\n  \"roleId\": \"role-admin\",\n  \"role\": \"ADMIN\",\n  \"status\": \"ACTIVE\",\n  \"avatarBg\": \"#10B981\",\n  \"requirePasswordChange\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User (Complete Payload - Admin Only)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Updates user profile, assigned role, phone number, and account active status.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Deepak Choudhary\",\n  \"email\": \"deepak.c@sundarafurnishings.com\",\n  \"mobile\": \"+1 (555) 789-9988\",\n  \"roleId\": \"role-manager\",\n  \"role\": \"MANAGER\",\n  \"status\": \"ACTIVE\",\n  \"avatarBg\": \"#3B82F6\",\n  \"requirePasswordChange\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin Reset User Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/2/reset-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "2",
+                "reset-password"
+              ],
+              "query": []
+            },
+            "description": "Admin action to reset user password with optional force-change flag.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"UpdatedPassword@123\",\n  \"requireChangeOnLogin\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete User Account (Admin Only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Removes user account from database."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "08. Roles & Permissions",
+      "item": [
+        {
+          "name": "List System Roles (With Dynamic User Counts & KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/roles?page=1&limit=10&status=ACTIVE&search=Warehouse",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "roles"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "description": "Status: ACTIVE | INACTIVE",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Warehouse",
+                  "description": "Search role name or code",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns security roles, assigned user counts, granular permissions, and role KPI metrics."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Role by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/roles/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "roles",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Fetches individual role specification, modules list, and matrix permissions."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Role (Complete Payload - Admin Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "roles"
+              ],
+              "query": []
+            },
+            "description": "Creates a new system role with custom module access and CRUD permission rules.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Warehouse Supervisor\",\n  \"code\": \"ROLE_WAREHOUSE_SUPERVISOR\",\n  \"description\": \"Manages goods receiving, shipments, physical inventory counts, and audits.\",\n  \"status\": \"ACTIVE\",\n  \"modules\": [\n    \"inventory\",\n    \"purchases\",\n    \"imports\"\n  ],\n  \"permissions\": {\n    \"inventory\": {\n      \"canView\": true,\n      \"canCreate\": true,\n      \"canEdit\": true,\n      \"canDelete\": false\n    },\n    \"purchases\": {\n      \"canView\": true,\n      \"canCreate\": true,\n      \"canEdit\": true,\n      \"canDelete\": false\n    },\n    \"imports\": {\n      \"canView\": true,\n      \"canCreate\": true,\n      \"canEdit\": true,\n      \"canDelete\": false\n    },\n    \"invoices\": {\n      \"canView\": true,\n      \"canCreate\": false,\n      \"canEdit\": false,\n      \"canDelete\": false\n    },\n    \"products\": {\n      \"canView\": true,\n      \"canCreate\": false,\n      \"canEdit\": false,\n      \"canDelete\": false\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Role (Complete Payload - Admin Only)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/roles/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "roles",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Updates role name, description, assigned modules, and granular CRUD flags.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Senior Warehouse Supervisor\",\n  \"code\": \"ROLE_WAREHOUSE_SUPERVISOR\",\n  \"description\": \"Senior authority for warehouse facilities, stock audits, receiving, and purchase orders.\",\n  \"status\": \"ACTIVE\",\n  \"modules\": [\n    \"inventory\",\n    \"purchases\",\n    \"imports\",\n    \"products\"\n  ],\n  \"permissions\": {\n    \"inventory\": {\n      \"canView\": true,\n      \"canCreate\": true,\n      \"canEdit\": true,\n      \"canDelete\": true\n    },\n    \"purchases\": {\n      \"canView\": true,\n      \"canCreate\": true,\n      \"canEdit\": true,\n      \"canDelete\": false\n    },\n    \"imports\": {\n      \"canView\": true,\n      \"canCreate\": true,\n      \"canEdit\": true,\n      \"canDelete\": false\n    },\n    \"invoices\": {\n      \"canView\": true,\n      \"canCreate\": false,\n      \"canEdit\": false,\n      \"canDelete\": false\n    },\n    \"products\": {\n      \"canView\": true,\n      \"canCreate\": true,\n      \"canEdit\": true,\n      \"canDelete\": false\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Role (Admin Only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/roles/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "roles",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Deletes a custom security role if not assigned to active users."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "09. Suppliers & Vendors",
+      "item": [
+        {
+          "name": "List Suppliers (With Filters, Pagination & KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/suppliers?page=1&limit=10&status=ACTIVE&search=Appalachian",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "suppliers"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "description": "Status: ACTIVE | INACTIVE",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Appalachian",
+                  "description": "Search company name, contact person, email, or code",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns vendor directory, opening balances, contact profiles, and supplier KPI metrics."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Supplier by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/suppliers/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "suppliers",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Fetches individual vendor record and transaction history."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Supplier (Complete Payload)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/suppliers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "suppliers"
+              ],
+              "query": []
+            },
+            "description": "Registers a new vendor with full billing address, tax identification, and payment terms.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplierCode\": \"SUP-AHM-01\",\n  \"supplierType\": \"BUSINESS\",\n  \"companyName\": \"Appalachian Hardwood Mills\",\n  \"contactPerson\": \"Robert Henderson\",\n  \"email\": \"orders@appalachianmills.com\",\n  \"phone\": \"+1 (555) 234-5678\",\n  \"alternatePhone\": \"+1 (555) 234-5679\",\n  \"taxId\": \"EIN-82-4910291\",\n  \"paymentTerms\": \"Net 30\",\n  \"openingBalance\": 0,\n  \"addressLine1\": \"450 Timberland Parkway\",\n  \"addressLine2\": \"Suite 12\",\n  \"city\": \"Asheville\",\n  \"state\": \"North Carolina\",\n  \"postalCode\": \"28801\",\n  \"country\": \"United States\",\n  \"notes\": \"Primary raw timber and furniture supplier.\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Supplier (Complete Payload)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/suppliers/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "suppliers",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Updates complete vendor profile, payment terms, contact persons, and address.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"supplierCode\": \"SUP-AHM-01\",\n  \"supplierType\": \"BUSINESS\",\n  \"companyName\": \"Appalachian Hardwood Mills Inc.\",\n  \"contactPerson\": \"Robert Henderson (Senior VP)\",\n  \"email\": \"sales@appalachianmills.com\",\n  \"phone\": \"+1 (555) 234-5678\",\n  \"alternatePhone\": \"+1 (555) 234-5679\",\n  \"taxId\": \"EIN-82-4910291\",\n  \"paymentTerms\": \"Net 45\",\n  \"openingBalance\": 0,\n  \"addressLine1\": \"450 Timberland Parkway\",\n  \"addressLine2\": \"Building B, Suite 12\",\n  \"city\": \"Asheville\",\n  \"state\": \"North Carolina\",\n  \"postalCode\": \"28801\",\n  \"country\": \"United States\",\n  \"notes\": \"Negotiated preferred payment terms of Net 45 for Q4.\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Supplier",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/suppliers/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "suppliers",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Removes supplier record from system."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10. Warehouses & Facilities",
+      "item": [
+        {
+          "name": "List Warehouses (With Pagination & KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warehouses?page=1&limit=10&status=ACTIVE&search=Central",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warehouses"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "description": "Status: ACTIVE | INACTIVE",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Central",
+                  "description": "Search warehouse name, code, or city",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns list of storage facilities, location addresses, and facility KPI metrics."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Warehouse by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warehouses/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warehouses",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Fetches individual warehouse specifications and active storage details."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Warehouse (Complete Payload)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warehouses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warehouses"
+              ],
+              "query": []
+            },
+            "description": "Registers a new storage facility with address, facility code, and operating notes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"warehouseCode\": \"WH-CDC-01\",\n  \"name\": \"Central Distribution Center (CDC)\",\n  \"address\": \"1040 Logistics Blvd\",\n  \"city\": \"Columbus\",\n  \"state\": \"Ohio\",\n  \"postalCode\": \"43215\",\n  \"country\": \"United States\",\n  \"status\": \"ACTIVE\",\n  \"notes\": \"Primary regional hub with high-bay racked storage and 12 dock bays.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Warehouse (Complete Payload)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warehouses/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warehouses",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Updates complete warehouse details, location address, and active status.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"warehouseCode\": \"WH-CDC-01\",\n  \"name\": \"Central Distribution Center (CDC) - Main Hub\",\n  \"address\": \"1040 Logistics Blvd, Gate 4\",\n  \"city\": \"Columbus\",\n  \"state\": \"Ohio\",\n  \"postalCode\": \"43215\",\n  \"country\": \"United States\",\n  \"status\": \"ACTIVE\",\n  \"notes\": \"Expanded dock capacity with 16 automated dock levelers.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Warehouse",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warehouses/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warehouses",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Deletes warehouse facility record by ID."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11. Sales Channels",
+      "item": [
+        {
+          "name": "List Sales Channels (With Product Counts, Pagination & KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales-channels?page=1&limit=10&status=ACTIVE&type=MARKETPLACE&search=Amazon",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales-channels"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "description": "Status: ACTIVE | INACTIVE",
+                  "disabled": true
+                },
+                {
+                  "key": "type",
+                  "value": "MARKETPLACE",
+                  "description": "Channel type: MARKETPLACE | OWN_WEBSITE | RETAIL",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Amazon",
+                  "description": "Search channel name or code",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns sales channel configurations, product publishing counts, and channel KPI metrics."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Sales Channel by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales-channels/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales-channels",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Fetches individual sales channel record."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Sales Channel (Complete Payload - Admin Only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales-channels",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales-channels"
+              ],
+              "query": []
+            },
+            "description": "Provisions a new sales channel (Marketplace, Own Website, or Retail).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Amazon US Marketplace\",\n  \"code\": \"CH-AMZ-US\",\n  \"type\": \"MARKETPLACE\",\n  \"website\": \"https://sellercentral.amazon.com\",\n  \"description\": \"FBA and Merchant Fulfilled Amazon Storefront\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Sales Channel (Complete Payload - Admin Only)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales-channels/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales-channels",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Updates complete sales channel configuration, website link, and status.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Amazon US Marketplace - Prime Store\",\n  \"code\": \"CH-AMZ-US\",\n  \"type\": \"MARKETPLACE\",\n  \"website\": \"https://sellercentral.amazon.com\",\n  \"description\": \"Primary US Amazon seller storefront with Prime 2-day delivery integration.\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Sales Channel (Admin Only)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/sales-channels/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sales-channels",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Removes sales channel record by ID."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "12. Product Categories",
+      "item": [
+        {
+          "name": "List Categories (With Product Counts, Pagination & KPIs)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/categories?page=1&limit=10&status=ACTIVE&search=Living",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "categories"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "status",
+                  "value": "ACTIVE",
+                  "description": "Status: ACTIVE | INACTIVE",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "Living",
+                  "description": "Search category name or code",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns categories list, active product counts, and category KPI totals."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Category by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/categories/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "categories",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Fetches individual category details and associated product list."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Category (Complete Payload)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/categories",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "categories"
+              ],
+              "query": []
+            },
+            "description": "Creates a new product categorization bucket.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Living Room Furniture\",\n  \"code\": \"CAT-LIVING\",\n  \"description\": \"Couches, accent chairs, coffee tables, and credenzas.\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Category (Complete Payload)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/categories/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "categories",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Updates category name, description, code, and status.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Living Room & Lounge Furniture\",\n  \"code\": \"CAT-LIVING\",\n  \"description\": \"Handcrafted wooden sofas, accent armchairs, coffee tables, media consoles.\",\n  \"status\": \"ACTIVE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Category",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/categories/1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "categories",
+                "1"
+              ],
+              "query": []
+            },
+            "description": "Deletes category if not associated with active products."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "13. Analytics & Financial Reports",
+      "item": [
+        {
+          "name": "Get Executive Insights & KPI Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/insights?timeRange=THIS_MONTH&startDate=2026-11-01&endDate=2026-11-30",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "insights"
+              ],
+              "query": [
+                {
+                  "key": "timeRange",
+                  "value": "THIS_MONTH",
+                  "description": "Preset: TODAY | 7D | 30D | THIS_MONTH | LAST_MONTH | THIS_YEAR | CUSTOM",
+                  "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-11-01",
+                  "description": "Required if timeRange=CUSTOM (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-11-30",
+                  "description": "Required if timeRange=CUSTOM (YYYY-MM-DD)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Calculates executive dashboard metrics: Gross Revenue, Net Profit, Orders count, Low stock warnings, and channel breakdown."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Sales Breakdown Report (Tabular & Paginated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/sales?page=1&limit=10&timeRange=THIS_MONTH&startDate=2026-11-01&endDate=2026-11-30&status=ISSUED",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "sales"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "timeRange",
+                  "value": "THIS_MONTH",
+                  "description": "Preset: TODAY | 7D | 30D | THIS_MONTH | LAST_MONTH | THIS_YEAR | CUSTOM",
+                  "disabled": false
+                },
+                {
+                  "key": "startDate",
+                  "value": "2026-11-01",
+                  "description": "Required if timeRange=CUSTOM",
+                  "disabled": true
+                },
+                {
+                  "key": "endDate",
+                  "value": "2026-11-30",
+                  "description": "Required if timeRange=CUSTOM",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "ISSUED",
+                  "description": "Filter invoice status",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns tabular sales ledger report with line item aggregates and customer payments."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Purchases Breakdown Report (Tabular & Paginated)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/purchases?page=1&limit=10&timeRange=THIS_MONTH",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "purchases"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "timeRange",
+                  "value": "THIS_MONTH",
+                  "description": "Preset: TODAY | 7D | 30D | THIS_MONTH | LAST_MONTH | THIS_YEAR | CUSTOM",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Returns tabular purchase spend report by vendor and warehouse."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Inventory Valuation & Stock Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/inventory?page=1&limit=10&warehouseId=1&categoryId=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "inventory"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1",
+                  "description": "Current page number (Default: 1)",
+                  "disabled": false
+                },
+                {
+                  "key": "limit",
+                  "value": "10",
+                  "description": "Records per page (Default: 10, max: 100, or 'all')",
+                  "disabled": false
+                },
+                {
+                  "key": "warehouseId",
+                  "value": "1",
+                  "description": "Filter inventory by warehouse facility",
+                  "disabled": true
+                },
+                {
+                  "key": "categoryId",
+                  "value": "1",
+                  "description": "Filter by product category",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Returns asset valuation, unit stock levels, cost bases, and projected retail value."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Profit & Loss Summary Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/profit-loss?timeRange=THIS_MONTH",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "profit-loss"
+              ],
+              "query": [
+                {
+                  "key": "timeRange",
+                  "value": "THIS_MONTH",
+                  "description": "Preset: TODAY | 7D | 30D | THIS_MONTH | LAST_MONTH | THIS_YEAR | CUSTOM",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Financial P&L statement comparing Gross Revenue against COGS, Shipping, and Operational Expenses."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Tax Liability & Collection Report",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reports/tax?timeRange=THIS_MONTH",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reports",
+                "tax"
+              ],
+              "query": [
+                {
+                  "key": "timeRange",
+                  "value": "THIS_MONTH",
+                  "description": "Preset: TODAY | 7D | 30D | THIS_MONTH | LAST_MONTH | THIS_YEAR | CUSTOM",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Returns collected state sales taxes, taxable gross amounts, and tax filing liability."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "14. System Settings",
+      "item": [
+        {
+          "name": "Get Company & System Settings",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings"
+              ],
+              "query": []
+            },
+            "description": "Fetches corporate profile, EIN, default tax configurations, tax slabs, and payment terms."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Company & System Settings (Complete Payload - Admin Only)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings"
+              ],
+              "query": []
+            },
+            "description": "Updates company credentials, billing email, corporate address, tax slabs, and payment term definitions.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"companyName\": \"Sundara Furnishings LLC\",\n  \"corporateName\": \"Sundara Home Goods International Inc.\",\n  \"ein\": \"84-3948210\",\n  \"salesTaxPermit\": \"ST-TX-998201\",\n  \"address\": \"1000 Broadway Avenue, Suite 500\",\n  \"city\": \"New York\",\n  \"state\": \"NY\",\n  \"zipCode\": \"10005\",\n  \"phone\": \"+1 (800) 555-0199\",\n  \"email\": \"billing@sundarafurnishings.com\",\n  \"logoUrl\": \"https://sundarafurnishings.com/assets/logo.png\",\n  \"defaultTaxRate\": 8.25,\n  \"taxCalculationMode\": \"EXCLUSIVE\",\n  \"taxLabel\": \"State Sales Tax\",\n  \"taxSlabs\": [\n    {\n      \"name\": \"Standard Rate\",\n      \"rate\": 8.25,\n      \"isDefault\": true,\n      \"taxCode\": \"TAX-STD-825\",\n      \"description\": \"Standard state and local combined rate\",\n      \"isActive\": true\n    },\n    {\n      \"name\": \"Reduced Essentials Rate\",\n      \"rate\": 5,\n      \"isDefault\": false,\n      \"taxCode\": \"TAX-RED-500\",\n      \"description\": \"Reduced rate for essential home items\",\n      \"isActive\": true\n    },\n    {\n      \"name\": \"Zero Tax / Export Exempt\",\n      \"rate\": 0,\n      \"isDefault\": false,\n      \"taxCode\": \"TAX-ZERO-000\",\n      \"description\": \"Out-of-state exempt shipments\",\n      \"isActive\": true\n    }\n  ],\n  \"paymentTerms\": [\n    {\n      \"name\": \"Net 30 Days\",\n      \"days\": 30,\n      \"description\": \"Payment due within 30 days of invoice\",\n      \"isDefault\": true,\n      \"isActive\": true\n    },\n    {\n      \"name\": \"Net 15 Days\",\n      \"days\": 15,\n      \"description\": \"Payment due within 15 days\",\n      \"isDefault\": false,\n      \"isActive\": true\n    },\n    {\n      \"name\": \"Due on Receipt / COD\",\n      \"days\": 0,\n      \"description\": \"Immediate settlement on delivery\",\n      \"isDefault\": false,\n      \"isActive\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "15. System Health",
+      "item": [
+        {
+          "name": "API Health & Database Check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ],
+              "query": []
+            },
+            "description": "Returns API operational status, timestamp, and database connectivity.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

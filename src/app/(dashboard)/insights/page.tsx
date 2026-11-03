@@ -1,30 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowRight,
-  ArrowUpRight,
-  BarChart3,
-  Calendar,
-  CheckCircle2,
   CircleDollarSign,
-  Download,
   FileText,
-  Filter,
-  Layers,
   Package,
-  PieChart as PieIcon,
-  ShieldCheck,
   ShoppingBag,
-  Store,
-  TrendingDown,
   TrendingUp,
-  Truck,
   Warehouse,
-  XCircle,
+  PieChart as PieIcon,
+  BarChart3,
+  Layers,
+  ArrowRight,
 } from "lucide-react";
 import {
   Area,
@@ -33,7 +21,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -41,42 +28,74 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import {
-  channelColors,
-  getBestSellingProducts,
-  getCategoryBreakdown,
-  getChannelBreakdown,
-  monthlyRevenueTrends,
-} from "@/features/insights/insight.data";
 import { InfoTooltip } from "@/components/ui/tooltip";
 import { DateRangeFilter } from "@/components/ui/date-range-filter";
+import { getDashboardInsightsApi, type DashboardInsights } from "@/lib/api/insight.api";
+import { CountUp } from "@/components/ui/count-up";
 
 type TimeRange = "TODAY" | "7D" | "30D" | "CUSTOM" | "ALL";
 
+const channelPalette = ["#047857", "#2563eb", "#d97706", "#7c3aed", "#e11d48", "#0891b2"];
+
 export default function InsightsPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>("30D");
-  const [categoryView, setCategoryView] = useState<"ranked" | "chart">("ranked");
   const [customStartDate, setCustomStartDate] = useState("2026-10-01");
   const [customEndDate, setCustomEndDate] = useState("2026-10-28");
+  const [insights, setInsights] = useState<DashboardInsights | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
 
-  const channelData = useMemo(() => getChannelBreakdown(), []);
-  const categoryData = useMemo(() => getCategoryBreakdown(), []);
-  const bestSellers = useMemo(() => getBestSellingProducts(), []);
-  const maxCategoryRevenue = useMemo(() => Math.max(...categoryData.map((c) => c.revenue), 1), [categoryData]);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
-  // Time range multiplier simulation for realistic filter reactions
-  const multiplier =
-    timeRange === "TODAY"
-      ? 0.05
-      : timeRange === "7D"
-      ? 0.28
-      : timeRange === "30D"
-      ? 1.0
-      : timeRange === "CUSTOM"
-      ? 0.65
-      : 3.8;
-  const currentRevenue = 48250 * multiplier;
-  const currentProfit = 26410 * multiplier;
+  useEffect(() => {
+    async function loadInsights() {
+      setIsLoading(true);
+      try {
+        const res = await getDashboardInsightsApi({
+          timeRange: timeRange !== "ALL" ? timeRange : undefined,
+          startDate: timeRange === "CUSTOM" && customStartDate ? customStartDate : undefined,
+          endDate: timeRange === "CUSTOM" && customEndDate ? customEndDate : undefined,
+        });
+        if (res.success && res.data) {
+          setInsights(res.data);
+        }
+      } catch (err) {
+        console.error("Failed to load business insights", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadInsights();
+  }, [timeRange, customStartDate, customEndDate]);
+
+  const channelData = useMemo(() => {
+    return (insights?.channelBreakdown || []).map((ch, idx) => ({
+      ...ch,
+      color: channelPalette[idx % channelPalette.length],
+    }));
+  }, [insights]);
+
+  const categoryData = useMemo(() => {
+    return (insights?.categoryBreakdown || []).map((cat, idx) => ({
+      ...cat,
+      color: channelPalette[idx % channelPalette.length],
+    }));
+  }, [insights]);
+
+  const bestSellers = insights?.bestSellingProducts || [];
+  const monthlyRevenueTrends = insights?.monthlyTrends || [];
+
+  // Metrics from API
+  const currentRevenue = insights?.kpi.totalSales ?? 0;
+  const currentProfit = insights?.kpi.grossProfit ?? 0;
+  const capitalInStock = insights?.kpi.inventoryValue ?? 0;
+  const averageOrderValue =
+    insights && insights.kpi.totalInvoices > 0
+      ? insights.kpi.totalSales / insights.kpi.totalInvoices
+      : 0;
+  const totalUnits = insights?.kpi.totalProducts ?? 0;
 
   return (
     <div className="space-y-6">
@@ -117,14 +136,16 @@ export default function InsightsPage() {
         </div>
       </div>
 
-      {/* Top 4 KPI Cards with Info Tooltips */}
+      {/* Top 4 KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <InsightStatCard
           label="Total Net Revenue"
-          value={`$${currentRevenue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          change="+14.2%"
-          changeDirection="up"
-          subtext={timeRange === "TODAY" ? "today's billing" : "vs previous period"}
+          value={currentRevenue}
+          isCurrency
+          isLoading={isLoading}
+          change={currentRevenue > 0 ? "+100%" : "0.0%"}
+          changeDirection="neutral"
+          subtext="in period"
           tooltip="Total invoiced sales revenue after deducting line item discounts."
           icon={CircleDollarSign}
           iconColor="text-emerald-700"
@@ -132,10 +153,12 @@ export default function InsightsPage() {
         />
         <InsightStatCard
           label="Gross Profit (COGS Deducted)"
-          value={`$${currentProfit.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-          change="54.7%"
+          value={currentProfit}
+          isCurrency
+          isLoading={isLoading}
+          change={`${insights?.kpi.profitMarginPercent ?? 0}%`}
           changeDirection="neutral"
-          subtext="healthy profit margin"
+          subtext="profit margin"
           tooltip="Gross Profit = Net Revenue minus manufacturing procurement base cost (COGS)."
           icon={TrendingUp}
           iconColor="text-blue-700"
@@ -143,10 +166,12 @@ export default function InsightsPage() {
         />
         <InsightStatCard
           label="Capital in Stock"
-          value="$184,620.00"
-          change="428 units"
+          value={capitalInStock}
+          isCurrency
+          isLoading={isLoading}
+          change={`${totalUnits} products`}
           changeDirection="neutral"
-          subtext="across 3 warehouses"
+          subtext="across warehouses"
           tooltip="Total extended dollar value of physical inventory sitting across all fulfillment warehouses."
           icon={Warehouse}
           iconColor="text-amber-700"
@@ -154,10 +179,12 @@ export default function InsightsPage() {
         />
         <InsightStatCard
           label="Average Order Value (AOV)"
-          value="$2,412.50"
-          change="+8.5%"
-          changeDirection="up"
-          subtext="per commercial invoice"
+          value={averageOrderValue}
+          isCurrency
+          isLoading={isLoading}
+          change={`${insights?.kpi.totalInvoices ?? 0} orders`}
+          changeDirection="neutral"
+          subtext="invoices issued"
           tooltip="Average dollar value billed per completed customer invoice."
           tooltipAlign="end"
           icon={ShoppingBag}
@@ -195,128 +222,133 @@ export default function InsightsPage() {
           </div>
 
           <div className="mt-6 h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={monthlyRevenueTrends}
-                margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#047857" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#047857" stopOpacity={0.0} />
-                  </linearGradient>
-                  <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#64748b" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#64748b" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid vertical={false} stroke="#f1f5f9" />
-                <XAxis
-                  dataKey="month"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: "#64748b", fontSize: 12 }}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: "#64748b", fontSize: 12 }}
-                  tickFormatter={(v) => `$${v / 1000}k`}
-                />
-                <RechartsTooltip
-                  formatter={(val: any, name: any) => [
-                    `$${Number(val).toLocaleString()}`,
-                    name === "revenue" ? "Sales Revenue" : "Procurement Cost",
-                  ]}
-                  contentStyle={{
-                    borderRadius: "12px",
-                    border: "1px solid #e2e8f0",
-                    boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.05)",
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="revenue"
-                  stroke="#047857"
-                  strokeWidth={2.5}
-                  fillOpacity={1}
-                  fill="url(#revenueGrad)"
-                />
-                <Area
-                  type="monotone"
-                  dataKey="cost"
-                  stroke="#64748b"
-                  strokeWidth={2}
-                  strokeDasharray="3 3"
-                  fillOpacity={1}
-                  fill="url(#costGrad)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+            {!isMounted ? (
+              <div className="flex h-full items-center justify-center text-xs text-[var(--muted)]">Loading visual charts...</div>
+            ) : monthlyRevenueTrends.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] text-center text-sm text-[var(--muted)]">
+                <BarChart3 size={28} className="text-[var(--muted)]/50" />
+                <p className="mt-2 font-medium text-[var(--foreground)]">No revenue trajectory data available yet</p>
+                <p className="mt-0.5 text-xs text-[var(--muted)]">Trends will plot automatically once sales invoices are logged.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={monthlyRevenueTrends}
+                  margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#047857" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#047857" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="costGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#64748b" stopOpacity={0.2} />
+                      <stop offset="95%" stopColor="#64748b" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} stroke="#f1f5f9" />
+                  <XAxis
+                    dataKey="month"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "#64748b", fontSize: 12 }}
+                  />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: "#64748b", fontSize: 12 }}
+                    tickFormatter={(v) => `$${v / 1000}k`}
+                  />
+                  <RechartsTooltip />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="#047857"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#revenueGrad)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="cost"
+                    stroke="#64748b"
+                    strokeWidth={2}
+                    strokeDasharray="3 3"
+                    fillOpacity={1}
+                    fill="url(#costGrad)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
-        {/* Channel Share Donut (1 col) */}
+        {/* Sales Channel Share (1 col) */}
         <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-2xs">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h2 className="text-base font-semibold text-[var(--foreground)]">
-                Sales Channel Share
-              </h2>
-              <InfoTooltip content="Percentage breakdown of total sales volume originating from website, Amazon, and Wayfair." />
-            </div>
-            <p className="text-xs text-[var(--muted)]">
-              Revenue distribution across sales portals.
-            </p>
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-base font-semibold text-[var(--foreground)]">
+              Sales Channel Share
+            </h2>
+            <InfoTooltip content="Proportion of total invoiced volume generated across selling platforms." />
           </div>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Revenue distribution across sales portals.
+          </p>
 
-          <div className="relative mt-3 h-48 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={channelData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={52}
-                  outerRadius={75}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  {channelData.map((entry) => (
-                    <Cell key={entry.name} fill={entry.color} />
-                  ))}
-                </Pie>
-                <RechartsTooltip
-                  formatter={(val: any) => [`$${Number(val).toLocaleString()}`, "Gross Volume"]}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-              <span className="text-xs text-[var(--muted)]">Top Channel</span>
-              <span className="text-sm font-bold text-emerald-800">Website 45%</span>
-            </div>
+          <div className="relative mt-6 flex h-48 w-full items-center justify-center">
+            {!isMounted ? (
+              <div className="flex h-full items-center justify-center text-xs text-[var(--muted)]">Loading channel share...</div>
+            ) : channelData.length === 0 ? (
+              <div className="flex h-full w-full flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] text-center text-sm text-[var(--muted)]">
+                <PieIcon size={26} className="text-[var(--muted)]/50" />
+                <p className="mt-2 text-xs font-medium text-[var(--foreground)]">No channel data available</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={channelData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={52}
+                    outerRadius={75}
+                    paddingAngle={4}
+                    dataKey="value"
+                  >
+                    {channelData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <RechartsTooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           <div className="mt-4 space-y-2 border-t border-[var(--border-light)] pt-3 text-xs">
-            {channelData.map((c) => (
-              <div key={c.name} className="flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: c.color }}
-                  />
-                  <span className="font-medium text-[var(--foreground)]">{c.name}</span>
-                </span>
-                <span className="font-semibold text-slate-700">
-                  ${c.value.toLocaleString()}
-                </span>
-              </div>
-            ))}
+            {channelData.length === 0 ? (
+              <p className="text-center text-xs text-[var(--muted)] py-2">No active channel transactions</p>
+            ) : (
+              channelData.map((c) => (
+                <div key={c.name} className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: c.color }}
+                    />
+                    <span className="font-medium text-[var(--foreground)]">{c.name}</span>
+                  </span>
+                  <span className="font-semibold text-slate-700">
+                    ${c.value.toLocaleString()}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
         </div>
       </div>
 
-      {/* Secondary Row: Category Performance (Colored & Legend) & Option 4 Stock Health Gauge */}
+      {/* Secondary Row: Category Performance & Stock Health */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Category Performance Bar (2 cols) */}
         <div className="rounded-2xl border border-[var(--border)] bg-white p-5 lg:col-span-2 shadow-2xs">
@@ -332,150 +364,54 @@ export default function InsightsPage() {
                 Color-coded revenue breakdown across Sundara product segments.
               </p>
             </div>
-
-            {/* Category Color Legend Pills */}
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              {categoryData.map((cat) => (
-                <span
-                  key={cat.category}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-light)] bg-white px-2.5 py-1 text-[11px] font-medium shadow-2xs"
-                  title={`${cat.category}: $${cat.revenue.toLocaleString()} (${cat.percentage}% of catalog)`}
-                >
-                  <span
-                    className="h-2.5 w-2.5 rounded-full ring-2 ring-white"
-                    style={{ backgroundColor: cat.color }}
-                  />
-                  <span className="text-slate-800 font-semibold">{cat.category}</span>
-                </span>
-              ))}
-            </div>
           </div>
 
           <div className="mt-6 h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={categoryData}
-                margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
-              >
-                <CartesianGrid vertical={false} stroke="#f1f5f9" />
-                <XAxis
-                  dataKey="category"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: "#64748b", fontSize: 12 }}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fill: "#64748b", fontSize: 12 }}
-                  tickFormatter={(v) => `$${v / 1000}k`}
-                />
-                <RechartsTooltip
-                  cursor={{ fill: "rgba(241, 245, 249, 0.6)" }}
-                  content={({ active, payload }: any) => {
-                    if (active && payload && payload.length) {
-                      const data = payload[0].payload;
-                      return (
-                        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-lg text-xs">
-                          <div className="flex items-center gap-2 font-semibold text-slate-900 pb-1.5 border-b border-slate-100">
-                            <span
-                              className="h-3 w-3 rounded-full"
-                              style={{ backgroundColor: data.color }}
-                            />
-                            <span className="text-sm font-bold">{data.category}</span>
-                            <span className="ml-auto rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                              {data.percentage}% Share
-                            </span>
-                          </div>
-                          <div className="mt-2 space-y-1 text-slate-600">
-                            <div className="flex justify-between gap-4">
-                              <span>Gross Revenue:</span>
-                              <span className="font-bold text-slate-900">
-                                ${data.revenue.toLocaleString()}
-                              </span>
-                            </div>
-                            <div className="flex justify-between gap-4">
-                              <span>Units Fulfilled:</span>
-                              <span className="font-medium text-slate-800">
-                                {data.units} units
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Bar dataKey="revenue" radius={[6, 6, 0, 0]} maxBarSize={52}>
-                  {categoryData.map((entry) => (
-                    <Cell key={entry.category} fill={entry.color} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+            {!isMounted ? (
+              <div className="flex h-full items-center justify-center text-xs text-[var(--muted)]">Loading category metrics...</div>
+            ) : categoryData.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] text-center text-sm text-[var(--muted)]">
+                <Layers size={28} className="text-[var(--muted)]/50" />
+                <p className="mt-2 font-medium text-[var(--foreground)]">No category sales recorded</p>
+                <p className="mt-0.5 text-xs text-[var(--muted)]">Sales velocity appears here once products in categories are sold.</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={categoryData}
+                  margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+                >
+                  <CartesianGrid vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="category" axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                  <RechartsTooltip />
+                  <Bar dataKey="revenue" radius={[6, 6, 0, 0]}>
+                    {categoryData.map((cat) => (
+                      <Cell key={cat.category} fill={cat.color} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
-        {/* Option 4: Stock Health Quick Gauge (1 col) - Tooltip positioned left to prevent screen overflow */}
-        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-2xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <ShieldCheck size={18} className="text-emerald-700" />
-                <h2 className="text-base font-semibold text-[var(--foreground)]">
-                  Stock Health Gauge
-                </h2>
-              </div>
-              {/* position="left" ensures tooltip expands towards the left inside the card body, zero screen overflow */}
-              <InfoTooltip
-                position="left"
-                content="Live readiness of inventory SKUs evaluated against designated reorder thresholds."
-              />
-            </div>
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              Real-time catalog readiness and warehouse replenishment risk.
-            </p>
+        {/* Stock Health Gauge (1 col) */}
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-2xs">
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-base font-semibold text-[var(--foreground)]">
+              Stock Health Status
+            </h2>
+            <InfoTooltip content="Overall distribution of active inventory catalog across stock thresholds." />
+          </div>
+          <p className="mt-1 text-xs text-[var(--muted)]">
+            Distribution across replenishment thresholds.
+          </p>
 
-            {/* Visual Gauge Progress Bar */}
-            <div className="mt-5">
-              <div className="flex justify-between text-xs font-semibold mb-1.5">
-                <span className="text-emerald-800">84% Healthy Fulfillment</span>
-                <span className="text-[var(--muted)]">23 Total SKUs</span>
-              </div>
-              <div className="flex h-3 w-full overflow-hidden rounded-full bg-slate-100">
-                <div style={{ width: "84%" }} className="bg-emerald-600 transition-all" title="In Stock: 84%" />
-                <div style={{ width: "12%" }} className="bg-amber-400 transition-all" title="Low Stock: 12%" />
-                <div style={{ width: "4%" }} className="bg-red-500 transition-all" title="Out of Stock: 4%" />
-              </div>
-            </div>
-
-            {/* Breakdown Status Rows */}
-            <div className="mt-5 space-y-2.5 text-xs">
-              <div className="flex items-center justify-between rounded-xl bg-emerald-50/60 p-2.5 border border-emerald-100/80">
-                <span className="flex items-center gap-2 font-medium text-emerald-900">
-                  <span className="h-2 w-2 rounded-full bg-emerald-600" />
-                  Optimal Stock Level
-                </span>
-                <span className="font-bold text-emerald-800">18 SKUs (84%)</span>
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl bg-amber-50/60 p-2.5 border border-amber-100/80">
-                <span className="flex items-center gap-2 font-medium text-amber-900">
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  Low Stock Warning
-                </span>
-                <span className="font-bold text-amber-800">4 SKUs (12%)</span>
-              </div>
-
-              <div className="flex items-center justify-between rounded-xl bg-red-50/60 p-2.5 border border-red-100/80">
-                <span className="flex items-center gap-2 font-medium text-red-900">
-                  <span className="h-2 w-2 rounded-full bg-red-500" />
-                  Depleted / Out of Stock
-                </span>
-                <span className="font-bold text-red-700">1 SKU (4%)</span>
-              </div>
-            </div>
+          <div className="mt-6 flex flex-col items-center justify-center rounded-xl bg-slate-50 p-6 text-center">
+            <Package size={32} className="text-[var(--muted)]/50" />
+            <p className="mt-2 text-sm font-semibold text-[var(--foreground)]">0 Total Units Tracked</p>
+            <p className="text-xs text-[var(--muted)] mt-0.5">All warehouse inventories are currently at zero</p>
           </div>
 
           <div className="mt-5 border-t border-[var(--border-light)] pt-3">
@@ -504,9 +440,6 @@ export default function InsightsPage() {
               Ranked furniture & furnishings items driven by fulfilled client invoices.
             </p>
           </div>
-          <span className="text-xs text-[var(--muted)]">
-            Showing top {bestSellers.length} active SKUs
-          </span>
         </div>
 
         <div className="overflow-x-auto">
@@ -518,65 +451,31 @@ export default function InsightsPage() {
                 <th className="px-5 py-3.5 text-center font-medium">Units Sold</th>
                 <th className="px-5 py-3.5 text-right font-medium">Gross Revenue</th>
                 <th className="px-5 py-3.5 text-right font-medium">Unit Cost</th>
-                <th className="px-5 py-3.5 text-right font-medium">Gross Profit</th>
-                <th className="px-5 py-3.5 text-center font-medium">Margin %</th>
-                <th className="px-5 py-3.5 text-center font-medium">Available Stock</th>
+                <th className="px-5 py-3.5 text-right font-medium">Gross Margin</th>
+                <th className="px-5 py-3.5 text-center font-medium">Current Stock</th>
               </tr>
             </thead>
-
-            <tbody className="divide-y divide-[var(--border-light)]">
-              {bestSellers.map((item, idx) => (
-                <tr key={item.id} className="transition hover:bg-[#fafcfb]">
-                  <td className="px-5 py-3.5">
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-700">
-                        #{idx + 1}
-                      </span>
-                      <div>
-                        <p className="font-semibold text-[var(--foreground)]">{item.name}</p>
-                        <p className="text-xs text-[var(--muted)]">{item.category}</p>
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="px-5 py-3.5 font-mono text-xs text-[var(--muted)]">
-                    {item.sku}
-                  </td>
-
-                  <td className="px-5 py-3.5 text-center font-semibold">
-                    {item.unitsSold}
-                  </td>
-
-                  <td className="px-5 py-3.5 text-right font-semibold text-[var(--foreground)]">
-                    ${item.revenue.toLocaleString()}
-                  </td>
-
-                  <td className="px-5 py-3.5 text-right text-xs text-[var(--muted)]">
-                    ${item.costPrice.toFixed(2)}
-                  </td>
-
-                  <td className="px-5 py-3.5 text-right font-semibold text-emerald-800">
-                    +${item.profit.toLocaleString()}
-                  </td>
-
-                  <td className="px-5 py-3.5 text-center">
-                    <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800">
-                      {item.marginPercent}%
-                    </span>
-                  </td>
-
-                  <td className="px-5 py-3.5 text-center">
-                    <span
-                      className={`inline-flex rounded-md px-2 py-0.5 text-xs font-medium ${item.onHandStock <= 10
-                        ? "bg-amber-50 text-amber-800"
-                        : "bg-slate-100 text-slate-700"
-                        }`}
-                    >
-                      {item.onHandStock} in stock
-                    </span>
+            <tbody>
+              {bestSellers.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-12 text-center text-sm text-[var(--muted)]">
+                    <p className="font-medium text-[var(--foreground)]">No sales data available for ranking</p>
+                    <p className="mt-0.5 text-xs text-[var(--muted)]">Top performing items will populate as orders are invoiced.</p>
                   </td>
                 </tr>
-              ))}
+              ) : (
+                bestSellers.map((prod, idx) => (
+                  <tr key={prod.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/50">
+                    <td className="px-5 py-4 font-medium text-slate-800">#{idx + 1} {prod.name}</td>
+                    <td className="px-5 py-4 text-xs font-mono text-slate-500">{prod.sku}</td>
+                    <td className="px-5 py-4 text-center font-medium">{prod.unitsSold}</td>
+                    <td className="px-5 py-4 text-right font-semibold text-emerald-800">${prod.revenue.toLocaleString()}</td>
+                    <td className="px-5 py-4 text-right text-xs text-slate-500">${prod.costPrice.toFixed(2)}</td>
+                    <td className="px-5 py-4 text-right font-semibold text-slate-800">{prod.marginPercent}%</td>
+                    <td className="px-5 py-4 text-center font-medium">{prod.onHandStock}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -588,68 +487,54 @@ export default function InsightsPage() {
 function InsightStatCard({
   label,
   value,
+  isCurrency = false,
+  isLoading = false,
   change,
-  changeDirection,
+  changeDirection = "neutral",
   subtext,
   tooltip,
+  tooltipAlign = "start",
   icon: Icon,
   iconColor,
   iconBg,
-  tooltipPosition = "top",
-  tooltipAlign = "center",
 }: {
   label: string;
-  value: string;
+  value: number;
+  isCurrency?: boolean;
+  isLoading?: boolean;
   change: string;
-  changeDirection: "up" | "down" | "neutral";
+  changeDirection?: "up" | "down" | "neutral";
   subtext: string;
   tooltip?: string;
-  icon: React.ComponentType<{ size: number }>;
+  tooltipAlign?: "start" | "end";
+  icon: any;
   iconColor: string;
   iconBg: string;
-  tooltipPosition?: "top" | "bottom" | "left" | "right";
-  tooltipAlign?: "start" | "center" | "end";
 }) {
   return (
     <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-2xs">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium leading-snug text-[var(--muted)]">
-            <span>{label}</span>
-            {tooltip && (
-              <span className="ml-1.5 inline-block align-middle">
-                <InfoTooltip
-                  content={tooltip}
-                  position={tooltipPosition}
-                  align={tooltipAlign}
-                  size={13}
-                />
-              </span>
-            )}
-          </div>
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-1.5">
+          <p className="text-xs font-semibold text-[var(--muted)] uppercase tracking-wider">{label}</p>
+          {tooltip && <InfoTooltip content={tooltip} align={tooltipAlign} />}
         </div>
-        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${iconBg} ${iconColor}`}>
-          <Icon size={20} />
+        <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${iconBg} ${iconColor}`}>
+          <Icon size={18} />
         </span>
       </div>
-      <p className="mt-4 text-2xl font-bold tracking-tight text-[var(--foreground)]">{value}</p>
-      <div className="mt-2 flex items-center gap-1.5 text-xs text-[var(--muted)]">
-        {changeDirection === "up" && (
-          <span className="flex items-center font-semibold text-emerald-700">
-            <ArrowUpRight size={14} />
-            {change}
-          </span>
-        )}
-        {changeDirection === "down" && (
-          <span className="flex items-center font-semibold text-red-700">
-            <ArrowDownRight size={14} />
-            {change}
-          </span>
-        )}
-        {changeDirection === "neutral" && (
-          <span className="font-semibold text-slate-800">{change}</span>
-        )}
-        <span>• {subtext}</span>
+
+      <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--foreground)]">
+        <CountUp
+          value={value}
+          prefix={isCurrency ? "$" : ""}
+          decimals={isCurrency ? 2 : 0}
+          isLoading={isLoading}
+        />
+      </p>
+
+      <div className="mt-1 flex items-center gap-1.5 text-xs">
+        <span className="font-semibold text-slate-600">{change}</span>
+        <span className="text-[var(--muted)]">• {subtext}</span>
       </div>
     </div>
   );

@@ -1,5 +1,7 @@
+"use client";
+
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import {
   AlertCircle,
   ArrowLeft,
@@ -11,25 +13,62 @@ import {
   Edit3,
   FileSpreadsheet,
   FileText,
+  Loader2,
   Package,
   Ship,
   Warehouse,
 } from "lucide-react";
-import { initialImports } from "@/features/imports/import.data";
+import { getImportByIdApi } from "@/lib/api/import.api";
+import type { ImportShipment } from "@/features/imports/import.types";
 
 interface ViewImportPageProps {
   params: Promise<{ id: string }>;
 }
 
-export default async function ViewImportPage({ params }: ViewImportPageProps) {
-  const { id } = await params;
+export default function ViewImportPage({ params }: ViewImportPageProps) {
+  const { id } = use(params);
+  const [shipment, setShipment] = useState<ImportShipment | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const shipment = initialImports.find(
-    (item) => item.id === Number(id) || item.importNumber.toLowerCase() === id.toLowerCase()
-  );
+  useEffect(() => {
+    async function loadShipment() {
+      setIsLoading(true);
+      try {
+        const res = await getImportByIdApi(id);
+        if (res.success && res.data) {
+          setShipment(res.data);
+        } else {
+          setShipment(null);
+        }
+      } catch (err) {
+        console.error("Failed to load import:", err);
+        setShipment(null);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadShipment();
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-12 text-sm text-[var(--muted)]">
+        <Loader2 size={20} className="mr-2 animate-spin text-[var(--primary)]" />
+        Loading import shipment...
+      </div>
+    );
+  }
 
   if (!shipment) {
-    notFound();
+    return (
+      <div className="p-8 text-center">
+        <p className="text-base font-semibold">Shipment Not Found</p>
+        <p className="mt-1 text-xs text-[var(--muted)]">The requested import shipment ID does not exist.</p>
+        <Link href="/imports" className="mt-4 inline-flex items-center gap-1.5 text-xs text-[var(--primary)] hover:underline">
+          <ArrowLeft size={14} /> Back to Imports
+        </Link>
+      </div>
+    );
   }
 
   const getStatusBadge = (status: string) => {
@@ -118,134 +157,65 @@ export default async function ViewImportPage({ params }: ViewImportPageProps) {
         </div>
 
         <div className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
-          <p className="text-xs font-medium text-[var(--muted)]">Base Goods Cost</p>
-          <p className="mt-1 text-lg font-bold text-slate-800">
-            ${shipment.totalProductCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+          <p className="text-xs font-medium text-[var(--muted)]">PO Reference</p>
+          <p className="mt-1 text-sm font-semibold text-[var(--foreground)] truncate">
+            {shipment.purchaseNumber || "Direct Shipment"}
           </p>
-          <p className="text-xs text-amber-700 font-medium">
-            +${shipment.totalAdditionalCosts.toLocaleString("en-US", { minimumFractionDigits: 2 })} Freight & Duty
-          </p>
+          <p className="text-xs text-[var(--muted)] mt-0.5">BOL: {shipment.shipmentReference || "N/A"}</p>
         </div>
 
         <div className="rounded-xl border border-[var(--border)] bg-white p-4 shadow-sm">
           <p className="text-xs font-medium text-[var(--muted)]">Total Landed Valuation</p>
-          <p className="mt-1 text-lg font-bold text-emerald-800">
-            ${shipment.totalLandedCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+          <p className="mt-1 text-sm font-bold font-mono text-emerald-800">
+            ${Number(shipment.totalLandedCost || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
           </p>
-          <p className="text-xs text-emerald-600 font-medium">Cost Capitalized into Stock</p>
+          <p className="text-xs text-[var(--muted)] mt-0.5">
+            +${Number(shipment.totalAdditionalCosts || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })} freight & duty
+          </p>
         </div>
       </div>
 
-      {/* Expense Heads Breakdown */}
-      <section className="rounded-2xl border border-[var(--border)] bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-[var(--foreground)] border-b border-[var(--border-light)] pb-4">
-          Allocated Expense Heads ({shipment.expenseHeads.length})
-        </h2>
+      {/* Line Items Table with Landed Cost Breakdown */}
+      <div className="rounded-2xl border border-[var(--border)] bg-white shadow-sm overflow-hidden">
+        <div className="border-b border-[var(--border-light)] p-4">
+          <h2 className="text-base font-semibold">Landed Cost Allocation per Product SKU</h2>
+        </div>
 
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-xs text-left">
-            <thead>
-              <tr className="border-b border-[var(--border-light)] bg-[var(--muted-background)]/50 text-slate-600">
-                <th className="px-4 py-3 font-semibold">Expense Head</th>
-                <th className="px-4 py-3 font-semibold">Description</th>
-                <th className="px-4 py-3 font-semibold">Allocation Method</th>
-                <th className="px-4 py-3 text-right font-semibold">Allocated Amount</th>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[850px] text-sm">
+            <thead className="bg-[var(--muted-background)]/50 text-xs font-semibold text-[var(--muted)]">
+              <tr className="border-b border-[var(--border-light)] text-left">
+                <th className="px-5 py-3">Product Name & SKU</th>
+                <th className="px-4 py-3 text-center">Quantity</th>
+                <th className="px-4 py-3 text-right">FOB Unit Cost</th>
+                <th className="px-4 py-3 text-right">Total FOB</th>
+                <th className="px-4 py-3 text-right">Allocated Freight/Duty</th>
+                <th className="px-4 py-3 text-right">Total Landed Cost</th>
+                <th className="px-5 py-3 text-right font-bold text-emerald-800">Landed Unit Cost</th>
               </tr>
             </thead>
-            <tbody>
-              {shipment.expenseHeads.map((exp) => (
-                <tr key={exp.id} className="border-b border-[var(--border-light)] last:border-0 hover:bg-slate-50/60">
-                  <td className="px-4 py-3 font-medium text-[var(--foreground)]">
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
-                      {exp.type.replace("_", " ")}
-                    </span>
+
+            <tbody className="divide-y divide-[var(--border-light)]">
+              {(shipment.items || []).map((item) => (
+                <tr key={item.id} className="hover:bg-[var(--muted-background)]/30">
+                  <td className="px-5 py-4">
+                    <p className="font-medium text-[var(--foreground)]">{item.productName}</p>
+                    <p className="font-mono text-xs text-[var(--muted)]">{item.sku}</p>
                   </td>
-                  <td className="px-4 py-3 text-slate-700">{exp.description}</td>
-                  <td className="px-4 py-3 font-mono text-slate-600">
-                    {exp.allocationMethod.replace("_", " ")}
-                  </td>
-                  <td className="px-4 py-3 text-right font-mono font-bold text-amber-700">
-                    ${exp.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                  <td className="px-4 py-4 text-center font-semibold">{item.quantity}</td>
+                  <td className="px-4 py-4 text-right font-mono text-xs">${Number(item.purchaseUnitCost || 0).toFixed(2)}</td>
+                  <td className="px-4 py-4 text-right font-mono text-xs">${Number(item.purchaseTotalCost || 0).toFixed(2)}</td>
+                  <td className="px-4 py-4 text-right font-mono text-xs text-amber-700">+${Number(item.allocatedExpense || 0).toFixed(2)}</td>
+                  <td className="px-4 py-4 text-right font-mono text-xs font-semibold">${Number(item.totalLandedCost || 0).toFixed(2)}</td>
+                  <td className="px-5 py-4 text-right font-mono text-sm font-bold text-emerald-800">
+                    ${Number(item.landedUnitCost || 0).toFixed(2)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </section>
-
-      {/* Items Landed Cost Table */}
-      <section className="rounded-2xl border border-[var(--border)] bg-white p-6 shadow-sm">
-        <h2 className="text-base font-semibold text-[var(--foreground)] border-b border-[var(--border-light)] pb-4">
-          Product Landed Cost Distribution
-        </h2>
-
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-xs text-left min-w-[700px]">
-            <thead>
-              <tr className="border-b border-[var(--border-light)] bg-[var(--muted-background)]/50 text-slate-600">
-                <th className="px-4 py-3 font-semibold">Item & SKU</th>
-                <th className="px-4 py-3 text-right font-semibold">Quantity</th>
-                <th className="px-4 py-3 text-right font-semibold">FOB Unit Cost</th>
-                <th className="px-4 py-3 text-right font-semibold">Base Total</th>
-                <th className="px-4 py-3 text-right font-semibold text-amber-700">Allocated Expenses</th>
-                <th className="px-4 py-3 text-right font-semibold text-emerald-800">Total Landed Cost</th>
-                <th className="px-4 py-3 text-right font-semibold text-emerald-800">Landed Unit Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shipment.items.map((item) => {
-                const markup = item.purchaseUnitCost > 0
-                  ? (((item.landedUnitCost - item.purchaseUnitCost) / item.purchaseUnitCost) * 100).toFixed(1)
-                  : "0.0";
-
-                return (
-                  <tr key={item.id} className="border-b border-[var(--border-light)] last:border-0 hover:bg-slate-50/60">
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-[var(--foreground)]">{item.productName}</p>
-                      <p className="font-mono text-[11px] text-[var(--muted)]">{item.sku}</p>
-                    </td>
-
-                    <td className="px-4 py-3 text-right font-medium text-slate-800">{item.quantity} units</td>
-
-                    <td className="px-4 py-3 text-right font-mono text-slate-600">
-                      ${item.purchaseUnitCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </td>
-
-                    <td className="px-4 py-3 text-right font-mono text-slate-700">
-                      ${item.purchaseTotalCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </td>
-
-                    <td className="px-4 py-3 text-right font-mono font-semibold text-amber-700">
-                      +${item.allocatedExpense.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </td>
-
-                    <td className="px-4 py-3 text-right font-mono font-bold text-slate-900">
-                      ${item.totalLandedCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                    </td>
-
-                    <td className="px-4 py-3 text-right">
-                      <p className="font-mono font-bold text-emerald-800">
-                        ${item.landedUnitCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-[10px] text-emerald-600 font-semibold">
-                        (+{markup}%)
-                      </p>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {shipment.notes && (
-          <div className="mt-5 rounded-xl border border-[var(--border-light)] bg-[var(--muted-background)]/30 p-4 text-xs text-[var(--muted)]">
-            <span className="font-semibold text-[var(--foreground)]">Shipment & Customs Notes: </span>
-            {shipment.notes}
-          </div>
-        )}
-      </section>
+      </div>
     </div>
   );
 }

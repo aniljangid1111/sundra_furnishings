@@ -1,92 +1,125 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
-  ArrowRight,
   Boxes,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   CircleDollarSign,
   History,
-  Layers,
   Package,
-  Plus,
   RotateCcw,
   Search,
   SlidersHorizontal,
-  Warehouse,
+  Warehouse as WarehouseIcon,
   X,
 } from "lucide-react";
 import {
-  initialInventory,
-  initialStockLedger,
-} from "@/features/inventory/inventory.data";
-import { warehouses } from "@/features/warehouses/warehouse.data";
+  getInventoryApi,
+  adjustStockApi,
+  type InventoryKPI,
+} from "@/lib/api/inventory.api";
+import { getWarehousesApi } from "@/lib/api/warehouse.api";
+import type { Warehouse } from "@/features/warehouses/warehouse.types";
+import { getCategoriesApi } from "@/lib/api/category.api";
+import type { Category } from "@/features/categories/category.types";
+import { PermissionGate } from "@/lib/auth/permission-gate";
+import { CountUp } from "@/components/ui/count-up";
 import type {
   InventoryItem,
-  StockLedgerEntry,
   StockStatus,
 } from "@/features/inventory/inventory.types";
 
 export default function InventoryPage() {
-  const [inventoryList, setInventoryList] =
-    useState<InventoryItem[]>(initialInventory);
-  const [ledger, setLedger] =
-    useState<StockLedgerEntry[]>(initialStockLedger);
+  const [inventoryList, setInventoryList] = useState<InventoryItem[]>([]);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [kpi, setKpi] = useState<InventoryKPI | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Filters & Pagination
   const [search, setSearch] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState("ALL");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState<"ALL" | StockStatus>("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    limit: 10,
+    totalItems: 0,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+  });
 
-  // Adjustment modal state
+  // Stock Adjustment modal state
   const [adjustingItem, setAdjustingItem] = useState<InventoryItem | null>(null);
+  const [adjustmentAction, setAdjustmentAction] = useState<"ADD" | "DEDUCT" | "SET">("ADD");
   const [adjustmentQty, setAdjustmentQty] = useState<string>("");
   const [adjustmentReason, setAdjustmentReason] = useState("Physical cycle count variance");
+  const [isSubmittingAdj, setIsSubmittingAdj] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
-  const categories = useMemo(() => {
-    return Array.from(new Set(inventoryList.map((i) => i.category)));
-  }, [inventoryList]);
+  // Load auxiliary data (warehouses & categories)
+  useEffect(() => {
+    async function loadAuxData() {
+      try {
+        const [wRes, cRes] = await Promise.all([
+          getWarehousesApi({ limit: 100 }),
+          getCategoriesApi({ limit: 100 }),
+        ]);
+        if (wRes.success && wRes.data) setWarehouses(wRes.data);
+        if (cRes.success && cRes.data) setCategories(cRes.data);
+      } catch (err) {
+        console.error("Failed to load warehouses or categories", err);
+      }
+    }
+    loadAuxData();
+  }, []);
 
-  const filteredItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  // Fetch live inventory from backend
+  const fetchInventory = async (page = 1) => {
+    setIsLoading(true);
+    try {
+      const res = await getInventoryApi({
+        warehouseId: warehouseFilter !== "ALL" ? warehouseFilter : undefined,
+        categoryId: categoryFilter !== "ALL" ? categoryFilter : undefined,
+        stockStatus: statusFilter !== "ALL" ? statusFilter : undefined,
+        search: search.trim() || undefined,
+        page,
+        limit: 10,
+      });
 
-    return inventoryList.filter((item) => {
-      const matchesSearch =
-        !q ||
-        item.productName.toLowerCase().includes(q) ||
-        item.sku.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q);
+      if (res.success && res.data) {
+        setInventoryList(res.data);
+        if (res.kpi) setKpi(res.kpi);
+        if (res.pagination) setPagination(res.pagination);
+      } else {
+        setInventoryList([]);
+      }
+    } catch (err) {
+      console.error("Failed to fetch inventory", err);
+      setInventoryList([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-      const matchesWarehouse =
-        warehouseFilter === "ALL" ||
-        String(item.warehouseId) === warehouseFilter;
+  useEffect(() => {
+    fetchInventory(currentPage);
+  }, [warehouseFilter, categoryFilter, statusFilter, currentPage]);
 
-      const matchesCategory =
-        categoryFilter === "ALL" || item.category === categoryFilter;
-
-      const matchesStatus =
-        statusFilter === "ALL" || item.stockStatus === statusFilter;
-
-      return (
-        matchesSearch && matchesWarehouse && matchesCategory && matchesStatus
-      );
-    });
-  }, [inventoryList, search, warehouseFilter, categoryFilter, statusFilter]);
-
-  // Derived KPIs
-  const totalUnits = inventoryList.reduce((acc, i) => acc + i.onHand, 0);
-  const totalValuation = inventoryList.reduce(
-    (acc, i) => acc + i.inventoryValue,
-    0,
-  );
-  const lowStockCount = inventoryList.filter(
-    (i) => i.stockStatus === "LOW_STOCK",
-  ).length;
-  const outOfStockCount = inventoryList.filter(
-    (i) => i.stockStatus === "OUT_OF_STOCK",
-  ).length;
+  // Debounced search trigger
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentPage(1);
+      fetchInventory(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const isFiltered =
     search.trim() !== "" ||
@@ -99,58 +132,40 @@ export default function InventoryPage() {
     setWarehouseFilter("ALL");
     setCategoryFilter("ALL");
     setStatusFilter("ALL");
+    setCurrentPage(1);
   };
 
-  const handleApplyAdjustment = () => {
+  const handleApplyAdjustment = async () => {
     if (!adjustingItem) return;
-    const change = parseInt(adjustmentQty, 10);
-    if (isNaN(change) || change === 0) return;
+    const qty = parseInt(adjustmentQty, 10);
+    if (isNaN(qty) || qty <= 0) return;
 
-    const previousBalance = adjustingItem.onHand;
-    const newBalance = Math.max(0, previousBalance + change);
-    const newAvailable = Math.max(0, newBalance - adjustingItem.reserved);
+    setIsSubmittingAdj(true);
+    try {
+      const res = await adjustStockApi({
+        productId: adjustingItem.productId,
+        warehouseId: adjustingItem.warehouseId,
+        action: adjustmentAction,
+        quantity: qty,
+        reason: adjustmentReason,
+      });
 
-    let newStatus: StockStatus = "IN_STOCK";
-    if (newBalance === 0) newStatus = "OUT_OF_STOCK";
-    else if (newBalance <= adjustingItem.reorderLevel) newStatus = "LOW_STOCK";
-
-    const updatedItem: InventoryItem = {
-      ...adjustingItem,
-      onHand: newBalance,
-      available: newAvailable,
-      inventoryValue: newBalance * adjustingItem.unitCost,
-      stockStatus: newStatus,
-    };
-
-    setInventoryList((prev) =>
-      prev.map((i) => (i.id === adjustingItem.id ? updatedItem : i)),
-    );
-
-    // Append to stock ledger
-    const newLedgerEntry: StockLedgerEntry = {
-      id: Date.now(),
-      date: new Date().toISOString().replace("T", " ").slice(0, 16),
-      productId: adjustingItem.productId,
-      sku: adjustingItem.sku,
-      productName: adjustingItem.productName,
-      warehouseId: adjustingItem.warehouseId,
-      warehouseName: adjustingItem.warehouseName,
-      movementType: "INVENTORY_ADJUSTMENT",
-      referenceDocument: `ADJ-${Math.floor(Math.random() * 900 + 100)}`,
-      quantityChange: change,
-      previousBalance,
-      newBalance,
-      notes: adjustmentReason,
-    };
-
-    setLedger((prev) => [newLedgerEntry, ...prev]);
-
-    setActionNotice(
-      `Adjusted stock for ${adjustingItem.productName} (${change > 0 ? `+${change}` : change} ${adjustingItem.uom}). Ledger recorded.`,
-    );
-    setAdjustingItem(null);
-    setAdjustmentQty("");
-    setTimeout(() => setActionNotice(null), 5000);
+      if (res.success) {
+        setActionNotice(
+          `Stock successfully updated for "${adjustingItem.productName}". Ledger entry recorded.`
+        );
+        setAdjustingItem(null);
+        setAdjustmentQty("");
+        fetchInventory(currentPage);
+        setTimeout(() => setActionNotice(null), 5000);
+      } else {
+        alert(res.message || "Failed to adjust stock");
+      }
+    } catch (err: any) {
+      alert(err?.message || "Error submitting stock adjustment");
+    } finally {
+      setIsSubmittingAdj(false);
+    }
   };
 
   return (
@@ -177,7 +192,7 @@ export default function InventoryPage() {
             href="/inventory/warehouses"
             className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
           >
-            <Warehouse size={16} />
+            <WarehouseIcon size={16} />
             Warehouses ({warehouses.length})
           </Link>
         </div>
@@ -196,31 +211,33 @@ export default function InventoryPage() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label="Total Units On-Hand"
-          value={totalUnits}
+          value={kpi?.totalUnits ?? 0}
+          isLoading={isLoading}
           icon={Boxes}
           color="text-emerald-700"
           bg="bg-[var(--primary-light)]"
         />
         <SummaryCard
           label="Inventory Valuation (Cost Basis)"
-          value={`$${totalValuation.toLocaleString("en-US", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}`}
+          value={kpi?.totalValuation ?? 0}
+          isCurrency
+          isLoading={isLoading}
           icon={CircleDollarSign}
           color="text-emerald-700"
           bg="bg-emerald-50"
         />
         <SummaryCard
           label="Low Stock Alerts"
-          value={lowStockCount}
+          value={kpi?.lowStockCount ?? 0}
+          isLoading={isLoading}
           icon={AlertTriangle}
           color="text-amber-700"
           bg="bg-amber-50"
         />
         <SummaryCard
           label="Out of Stock"
-          value={outOfStockCount}
+          value={kpi?.outOfStockCount ?? 0}
+          isLoading={isLoading}
           icon={AlertTriangle}
           color="text-red-700"
           bg="bg-red-50"
@@ -228,7 +245,7 @@ export default function InventoryPage() {
       </div>
 
       {/* Main Stock Table */}
-      <div className="rounded-2xl border border-[var(--border)] bg-white">
+      <div className="rounded-2xl border border-[var(--border)] bg-white shadow-xs">
         {/* Filters */}
         <div className="flex flex-col gap-3 border-b border-[var(--border-light)] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative w-full sm:max-w-xs md:max-w-sm">
@@ -248,7 +265,10 @@ export default function InventoryPage() {
             <div className="relative w-44">
               <select
                 value={warehouseFilter}
-                onChange={(e) => setWarehouseFilter(e.target.value)}
+                onChange={(e) => {
+                  setWarehouseFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="form-input appearance-none pr-10"
                 aria-label="Filter by warehouse"
               >
@@ -268,14 +288,17 @@ export default function InventoryPage() {
             <div className="relative w-40">
               <select
                 value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
+                onChange={(e) => {
+                  setCategoryFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="form-input appearance-none pr-10"
                 aria-label="Filter by category"
               >
                 <option value="ALL">All Categories</option>
                 {categories.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
+                  <option key={c.id} value={String(c.id)}>
+                    {c.name}
                   </option>
                 ))}
               </select>
@@ -288,9 +311,10 @@ export default function InventoryPage() {
             <div className="relative w-40">
               <select
                 value={statusFilter}
-                onChange={(e) =>
-                  setStatusFilter(e.target.value as "ALL" | StockStatus)
-                }
+                onChange={(e) => {
+                  setStatusFilter(e.target.value as "ALL" | StockStatus);
+                  setCurrentPage(1);
+                }}
                 className="form-input appearance-none pr-10"
                 aria-label="Filter by stock status"
               >
@@ -339,9 +363,15 @@ export default function InventoryPage() {
             </thead>
 
             <tbody className="divide-y divide-[var(--border-light)]">
-              {filteredItems.map((item) => {
-                return (
-                  <tr key={item.id} className="transition hover:bg-[#fafcfb]">
+              {isLoading ? (
+                <tr>
+                  <td colSpan={11} className="px-5 py-12 text-center text-sm text-[var(--muted)]">
+                    Loading inventory records...
+                  </td>
+                </tr>
+              ) : inventoryList.length > 0 ? (
+                inventoryList.map((item) => (
+                  <tr key={`${item.productId}-${item.warehouseId}`} className="transition hover:bg-[#fafcfb]">
                     <td className="px-5 py-4">
                       <div>
                         <p className="font-medium text-[var(--foreground)]">{item.productName}</p>
@@ -374,11 +404,11 @@ export default function InventoryPage() {
                     </td>
 
                     <td className="px-5 py-4 text-right text-xs">
-                      ${item.unitCost.toFixed(2)}
+                      ${Number(item.unitCost || 0).toFixed(2)}
                     </td>
 
                     <td className="px-5 py-4 text-right font-semibold text-[var(--foreground)]">
-                      ${item.inventoryValue.toLocaleString("en-US", {
+                      ${Number(item.inventoryValue || 0).toLocaleString("en-US", {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}
@@ -389,23 +419,24 @@ export default function InventoryPage() {
                     </td>
 
                     <td className="px-5 py-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAdjustingItem(item);
-                          setAdjustmentQty("");
-                        }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1 text-xs font-medium text-[var(--primary)] hover:bg-[var(--primary-light)]"
-                      >
-                        <SlidersHorizontal size={13} />
-                        Adjust
-                      </button>
+                      <PermissionGate module="inventory" action="edit">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdjustingItem(item);
+                            setAdjustmentAction("ADD");
+                            setAdjustmentQty("");
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-2.5 py-1 text-xs font-medium text-[var(--primary)] hover:bg-[var(--primary-light)]"
+                        >
+                          <SlidersHorizontal size={13} />
+                          Adjust
+                        </button>
+                      </PermissionGate>
                     </td>
                   </tr>
-                );
-              })}
-
-              {filteredItems.length === 0 && (
+                ))
+              ) : (
                 <tr>
                   <td colSpan={11} className="px-5 py-12 text-center">
                     <div className="mx-auto max-w-sm space-y-2">
@@ -422,11 +453,33 @@ export default function InventoryPage() {
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="border-t border-[var(--border-light)] px-5 py-3">
+        {/* Dynamic Pagination Footer */}
+        <div className="flex flex-col items-center justify-between gap-3 border-t border-[var(--border-light)] px-5 py-3 sm:flex-row">
           <p className="text-xs text-[var(--muted)]">
-            Showing {filteredItems.length} of {inventoryList.length} inventory lines
+            Showing {inventoryList.length} of {pagination.totalItems} inventory lines (Page {pagination.currentPage} of {pagination.totalPages || 1})
           </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!pagination.hasPrevPage || isLoading}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)] disabled:opacity-40"
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <span className="text-xs font-medium px-1 text-[var(--muted)]">
+              {pagination.currentPage} / {pagination.totalPages || 1}
+            </span>
+            <button
+              type="button"
+              disabled={!pagination.hasNextPage || isLoading}
+              onClick={() => setCurrentPage((p) => p + 1)}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)] disabled:opacity-40"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -435,9 +488,7 @@ export default function InventoryPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
           <div className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between border-b border-[var(--border-light)] pb-3">
-              <h2 className="text-base font-semibold">
-                Stock Adjustment
-              </h2>
+              <h2 className="text-base font-semibold">Stock Adjustment</h2>
               <button
                 type="button"
                 onClick={() => setAdjustingItem(null)}
@@ -461,14 +512,31 @@ export default function InventoryPage() {
               </div>
 
               <div>
+                <label className="mb-1 block text-xs font-medium" htmlFor="adj-action">
+                  Adjustment Action
+                </label>
+                <select
+                  id="adj-action"
+                  className="form-input"
+                  value={adjustmentAction}
+                  onChange={(e) => setAdjustmentAction(e.target.value as "ADD" | "DEDUCT" | "SET")}
+                >
+                  <option value="ADD">Add Stock (+ Units)</option>
+                  <option value="DEDUCT">Deduct Stock (- Units)</option>
+                  <option value="SET">Set Exact Stock Quantity</option>
+                </select>
+              </div>
+
+              <div>
                 <label className="mb-1 block text-xs font-medium" htmlFor="adj-qty">
-                  Quantity Change (+ to add, - to subtract)
+                  Quantity
                 </label>
                 <input
                   id="adj-qty"
                   type="number"
+                  min="1"
                   className="form-input"
-                  placeholder="e.g. +5 or -2"
+                  placeholder="e.g. 5"
                   value={adjustmentQty}
                   onChange={(e) => setAdjustmentQty(e.target.value)}
                 />
@@ -492,10 +560,17 @@ export default function InventoryPage() {
                 </select>
               </div>
 
-              {adjustmentQty && (
-                <div className="rounded-lg border border-[var(--border)] p-3 text-xs">
-                  <span className="text-[var(--muted)]">Preview Result: </span>
-                  <strong>{Math.max(0, adjustingItem.onHand + (parseInt(adjustmentQty, 10) || 0))}</strong> units on hand.
+              {adjustmentQty && parseInt(adjustmentQty, 10) > 0 && (
+                <div className="rounded-lg border border-[var(--border)] p-3 text-xs bg-[var(--muted-background)]">
+                  <span className="text-[var(--muted)]">Calculated Balance: </span>
+                  <strong>
+                    {adjustmentAction === "ADD"
+                      ? adjustingItem.onHand + parseInt(adjustmentQty, 10)
+                      : adjustmentAction === "DEDUCT"
+                      ? Math.max(0, adjustingItem.onHand - parseInt(adjustmentQty, 10))
+                      : parseInt(adjustmentQty, 10)}
+                  </strong>{" "}
+                  units on hand.
                 </div>
               )}
             </div>
@@ -510,11 +585,11 @@ export default function InventoryPage() {
               </button>
               <button
                 type="button"
+                disabled={!adjustmentQty || parseInt(adjustmentQty, 10) <= 0 || isSubmittingAdj}
                 onClick={handleApplyAdjustment}
-                disabled={!adjustmentQty || parseInt(adjustmentQty, 10) === 0}
                 className="rounded-lg bg-[var(--primary)] px-4 py-2 text-xs font-medium text-white! hover:bg-[var(--primary-dark)] disabled:opacity-50"
               >
-                Apply & Record Ledger
+                {isSubmittingAdj ? "Saving..." : "Apply & Record Ledger"}
               </button>
             </div>
           </div>
@@ -527,18 +602,22 @@ export default function InventoryPage() {
 function SummaryCard({
   label,
   value,
+  isCurrency = false,
+  isLoading = false,
   icon: Icon,
   color,
   bg,
 }: {
   label: string;
-  value: string | number;
+  value: number;
+  isCurrency?: boolean;
+  isLoading?: boolean;
   icon: React.ComponentType<{ size: number }>;
   color: string;
   bg: string;
 }) {
   return (
-    <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
+    <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-xs">
       <div className="flex items-center justify-between">
         <p className="text-sm text-[var(--muted)]">{label}</p>
         <span
@@ -547,7 +626,14 @@ function SummaryCard({
           <Icon size={19} />
         </span>
       </div>
-      <p className="mt-4 text-2xl font-semibold tracking-tight">{value}</p>
+      <p className="mt-4 text-2xl font-semibold tracking-tight">
+        <CountUp
+          value={value}
+          prefix={isCurrency ? "$" : ""}
+          decimals={isCurrency ? 2 : 0}
+          isLoading={isLoading}
+        />
+      </p>
     </div>
   );
 }

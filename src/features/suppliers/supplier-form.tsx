@@ -2,11 +2,14 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
+  AlertCircle,
   ArrowLeft,
   Building2,
   CreditCard,
   FileText,
+  Loader2,
   Mail,
   MapPin,
   Save,
@@ -19,6 +22,7 @@ import type {
   SupplierStatus,
   SupplierType,
 } from "./supplier.types";
+import { createSupplierApi, updateSupplierApi } from "@/lib/api/supplier.api";
 
 interface SupplierFormProps {
   mode: "create" | "edit";
@@ -89,9 +93,12 @@ export function SupplierForm({ mode, supplier }: SupplierFormProps) {
   // Section 5: Notes
   const [notes, setNotes] = useState(supplier?.notes ?? "");
 
+  const router = useRouter();
+
   // Feedback & validation state
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [feedbackMessage, setFeedbackMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -138,45 +145,53 @@ export function SupplierForm({ mode, supplier }: SupplierFormProps) {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    setErrorMessage(null);
 
     if (!validateForm()) {
-      setFeedbackMessage("");
       return;
     }
 
+    setIsSubmitting(true);
+
     const payload = {
-      supplierCode: supplierCode.trim(),
+      supplierCode: supplierCode.trim().toUpperCase(),
       supplierType,
-      companyName: companyName.trim(),
+      companyName: companyName.trim() || contactPerson.trim(),
       contactPerson: contactPerson.trim(),
-      email: email.trim(),
+      email: email.trim().toLowerCase(),
       phone: phone.trim(),
-      alternatePhone: alternatePhone.trim(),
-      taxId: taxId.trim(),
+      alternatePhone: alternatePhone.trim() || undefined,
+      taxId: taxId.trim() || undefined,
       addressLine1: addressLine1.trim(),
-      addressLine2: addressLine2.trim(),
+      addressLine2: addressLine2.trim() || undefined,
       city: city.trim(),
-      state: state.trim(),
+      state: state.trim().toUpperCase(),
       postalCode: postalCode.trim(),
       country: country.trim(),
       paymentTerms,
       openingBalance: Number(openingBalance) || 0,
       status,
-      notes: notes.trim(),
+      notes: notes.trim() || undefined,
     };
 
-    console.log(
-      isEdit ? "Updated supplier payload:" : "Created supplier payload:",
-      payload,
-    );
+    try {
+      if (isEdit && supplier?.id) {
+        await updateSupplierApi(supplier.id, payload);
+      } else {
+        await createSupplierApi(payload);
+      }
 
-    setFeedbackMessage(
-      isEdit
-        ? "Supplier details validated successfully. Note: Backend API persistence is pending implementation."
-        : "Supplier created and validated successfully. Note: Backend API persistence is pending implementation.",
-    );
+      router.push("/suppliers");
+      router.refresh();
+    } catch (err: any) {
+      setErrorMessage(
+        err.message || "Failed to save supplier. Please verify all fields."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -215,20 +230,26 @@ export function SupplierForm({ mode, supplier }: SupplierFormProps) {
           <button
             type="submit"
             form="supplier-form"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+            disabled={isSubmitting}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)] disabled:opacity-50"
           >
-            <Save size={16} />
+            {isSubmitting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
             {isEdit ? "Save Changes" : "Save Supplier"}
           </button>
         </div>
       </div>
 
-      {feedbackMessage && (
+      {errorMessage && (
         <div
-          role="status"
-          className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800"
+          role="alert"
+          className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800"
         >
-          {feedbackMessage}
+          <AlertCircle size={18} className="shrink-0 text-red-600" />
+          <p className="flex-1 font-medium">{errorMessage}</p>
         </div>
       )}
 
@@ -700,9 +721,14 @@ export function SupplierForm({ mode, supplier }: SupplierFormProps) {
 
           <button
             type="submit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+            disabled={isSubmitting}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)] disabled:opacity-50"
           >
-            <Save size={16} />
+            {isSubmitting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
             {isEdit ? "Save Changes" : "Save Supplier"}
           </button>
         </div>

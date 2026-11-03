@@ -28,9 +28,19 @@ export interface PaymentTerm {
 
 export interface CompanyProfile {
   name: string;
+  legalName?: string;
+  brandName?: string;
+  tagline?: string;
   logoUrl: string;
   ein: string;
   address: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
   phone: string;
   email: string;
+  website?: string;
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { DateRangeFilter } from "@/components/ui/date-range-filter";
 import {
@@ -12,118 +12,64 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-
-const stats = [
-  {
-    title: "Total Sales",
-    value: "$48,250",
-    change: "+12.5%",
-    description: "vs last month",
-    positive: true,
-  },
-  {
-    title: "Gross Profit",
-    value: "$26,410",
-    change: "+15.4%",
-    description: "vs last month",
-    positive: true,
-  },
-  {
-    title: "Outstanding",
-    value: "$12,680",
-    change: "18 invoices",
-    description: "pending payment",
-    positive: null,
-  },
-  {
-    title: "Inventory Value",
-    value: "$184,620",
-    change: "428 products",
-    description: "current stock value",
-    positive: null,
-  },
-];
-
-const recentInvoices = [
-  {
-    invoice: "INV-1024",
-    customer: "Urban Living Co.",
-    date: "Oct 18, 2026",
-    amount: "$4,280",
-    status: "Paid",
-  },
-  {
-    invoice: "INV-1023",
-    customer: "Modern Home LLC",
-    date: "Oct 17, 2026",
-    amount: "$2,850",
-    status: "Pending",
-  },
-  {
-    invoice: "INV-1022",
-    customer: "Oak & Stone",
-    date: "Oct 16, 2026",
-    amount: "$6,420",
-    status: "Paid",
-  },
-  {
-    invoice: "INV-1021",
-    customer: "Casa Interiors",
-    date: "Oct 15, 2026",
-    amount: "$1,980",
-    status: "Overdue",
-  },
-];
-
-const lowStock = [
-  {
-    product: "Luna Accent Chair",
-    sku: "CHR-001",
-    stock: 3,
-    reorder: 10,
-  },
-  {
-    product: "Oak Side Table",
-    sku: "TBL-014",
-    stock: 5,
-    reorder: 12,
-  },
-  {
-    product: "Linen Cushion Set",
-    sku: "CUS-021",
-    stock: 7,
-    reorder: 15,
-  },
-];
-
-const salesData = [
-  { month: "Jan", sales: 42000 },
-  { month: "Feb", sales: 55000 },
-  { month: "Mar", sales: 48000 },
-  { month: "Apr", sales: 62000 },
-  { month: "May", sales: 58000 },
-  { month: "Jun", sales: 71000 },
-  { month: "Jul", sales: 65000 },
-  { month: "Aug", sales: 78000 },
-  { month: "Sep", sales: 72000 },
-  { month: "Oct", sales: 86000 },
-  { month: "Nov", sales: 82000 },
-  { month: "Dec", sales: 94000 },
-];
+import { FileText, PackageOpen } from "lucide-react";
+import { getDashboardInsightsApi, type DashboardInsights } from "@/lib/api/insight.api";
+import { getInvoicesApi } from "@/lib/api/invoice.api";
+import { getInventoryAlertsApi } from "@/lib/api/inventory.api";
+import type { Invoice } from "@/features/invoices/invoice.types";
+import type { InventoryItem } from "@/features/inventory/inventory.types";
+import { CountUp } from "@/components/ui/count-up";
 
 export default function DashboardPage() {
   const [timeRange, setTimeRange] = useState<"TODAY" | "7D" | "30D" | "CUSTOM" | "ALL">("30D");
   const [customStartDate, setCustomStartDate] = useState("2026-10-01");
   const [customEndDate, setCustomEndDate] = useState("2026-10-28");
+  const [insights, setInsights] = useState<DashboardInsights | null>(null);
+  const [recentInvoices, setRecentInvoices] = useState<Invoice[]>([]);
+  const [lowStock, setLowStock] = useState<InventoryItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
 
-  const dynamicSales = timeRange === "TODAY" ? "$2,410" : timeRange === "7D" ? "$13,510" : timeRange === "30D" ? "$48,250" : timeRange === "CUSTOM" ? "$31,200" : "$183,350";
-  const dynamicProfit = timeRange === "TODAY" ? "$1,320" : timeRange === "7D" ? "$7,390" : timeRange === "30D" ? "$26,410" : timeRange === "CUSTOM" ? "$17,100" : "$100,320";
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
-  const currentStats = stats.map((s) => {
-    if (s.title === "Total Sales") return { ...s, value: dynamicSales, description: timeRange === "TODAY" ? "today billing" : s.description };
-    if (s.title === "Gross Profit") return { ...s, value: dynamicProfit, description: timeRange === "TODAY" ? "today margin" : s.description };
-    return s;
-  });
+  useEffect(() => {
+    async function loadDashboardData() {
+      setIsLoading(true);
+      try {
+        const [insRes, invRes, alertRes] = await Promise.all([
+          getDashboardInsightsApi({
+            timeRange: timeRange !== "ALL" ? timeRange : undefined,
+            startDate: timeRange === "CUSTOM" && customStartDate ? customStartDate : undefined,
+            endDate: timeRange === "CUSTOM" && customEndDate ? customEndDate : undefined,
+          }),
+          getInvoicesApi({ limit: 5 }),
+          getInventoryAlertsApi(),
+        ]);
+
+        if (insRes.success && insRes.data) setInsights(insRes.data);
+        if (invRes.success && invRes.data) setRecentInvoices(invRes.data);
+        if (alertRes.success && alertRes.data) setLowStock(alertRes.data);
+      } catch (err) {
+        console.error("Dashboard data load error:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadDashboardData();
+  }, [timeRange, customStartDate, customEndDate]);
+
+  const totalSales = insights?.kpi.totalSales ?? 0;
+  const grossProfit = insights?.kpi.grossProfit ?? 0;
+  const outstanding = insights?.kpi.outstandingAmount ?? 0;
+  const inventoryValue = insights?.kpi.inventoryValue ?? 0;
+
+  const salesData = (insights?.monthlyTrends || []).map((t) => ({
+    month: t.month,
+    sales: t.revenue,
+  }));
 
   return (
     <div className="space-y-6">
@@ -139,11 +85,12 @@ export default function DashboardPage() {
           </h1>
 
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Monitor your sales, inventory and business performance.
+            Live business overview, sales velocity, and inventory alerts.
           </p>
         </div>
 
-        <div className="shrink-0">
+        {/* Filters */}
+        <div className="flex flex-wrap items-center gap-3">
           <DateRangeFilter
             value={timeRange}
             onChange={setTimeRange}
@@ -155,218 +102,108 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {currentStats.map((stat) => (
-          <div
-            key={stat.title}
-            className="group rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <p className="text-sm font-medium text-[var(--muted)]">
-                {stat.title}
-              </p>
-
-              <span
-                className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-                  stat.positive
-                    ? "bg-[var(--primary-light)] text-[var(--primary)]"
-                    : "bg-[var(--muted-background)] text-[var(--muted)]"
-                }`}
-              >
-                {stat.change}
-              </span>
-            </div>
-
-            <p className="mt-4 text-[28px] font-semibold tracking-tight text-[var(--foreground)]">
-              {stat.value}
-            </p>
-
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              {stat.description}
+      {/* Stats grid */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {/* TOTAL SALES */}
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm">
+          <p className="text-sm font-medium text-[var(--muted)]">Total Sales</p>
+          <div className="mt-3 flex items-baseline justify-between">
+            <p className="text-2xl font-semibold tracking-tight text-[var(--foreground)] sm:text-3xl">
+              <CountUp value={totalSales} prefix="$" decimals={2} isLoading={isLoading} />
             </p>
           </div>
-        ))}
+          <p className="mt-2 text-xs text-[var(--muted)]">Invoiced volume</p>
+        </div>
+
+        {/* GROSS PROFIT */}
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm">
+          <p className="text-sm font-medium text-[var(--muted)]">Gross Profit</p>
+          <div className="mt-3 flex items-baseline justify-between">
+            <p className="text-2xl font-semibold tracking-tight text-[var(--foreground)] sm:text-3xl">
+              <CountUp value={grossProfit} prefix="$" decimals={2} isLoading={isLoading} />
+            </p>
+          </div>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            {insights?.kpi.profitMarginPercent ?? 0}% gross margin
+          </p>
+        </div>
+
+        {/* OUTSTANDING */}
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm">
+          <p className="text-sm font-medium text-[var(--muted)]">Outstanding</p>
+          <div className="mt-3 flex items-baseline justify-between">
+            <p className="text-2xl font-semibold tracking-tight text-[var(--foreground)] sm:text-3xl">
+              <CountUp value={outstanding} prefix="$" decimals={2} isLoading={isLoading} />
+            </p>
+          </div>
+          <p className="mt-2 text-xs text-[var(--muted)]">Pending receivables</p>
+        </div>
+
+        {/* INVENTORY VALUE */}
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm">
+          <p className="text-sm font-medium text-[var(--muted)]">Inventory Value</p>
+          <div className="mt-3 flex items-baseline justify-between">
+            <p className="text-2xl font-semibold tracking-tight text-[var(--foreground)] sm:text-3xl">
+              <CountUp value={inventoryValue} prefix="$" decimals={2} isLoading={isLoading} />
+            </p>
+          </div>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            {insights?.kpi.totalProducts ?? 0} active catalog items
+          </p>
+        </div>
       </div>
 
-      {/* Sales + Inventory */}
-      <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-        {/* Sales chart */}
-        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm sm:p-6">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="font-semibold text-[var(--foreground)]">
-                Sales performance
-              </h2>
+      {/* Revenue chart */}
+      <section className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm sm:p-6">
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="font-semibold text-[var(--foreground)]">
+              Revenue overview
+            </h2>
 
-              <p className="mt-1 text-sm text-[var(--muted)]">
-                Monthly sales performance
+            <p className="mt-1 text-xs text-[var(--muted)]">
+              Monthly billed revenue comparison
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-6 h-[260px] w-full">
+          {!isMounted ? (
+            <div className="flex h-full items-center justify-center text-xs text-[var(--muted)]">Loading chart...</div>
+          ) : salesData.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] text-center text-sm text-[var(--muted)]">
+              <p className="font-medium">No revenue data available yet</p>
+              <p className="mt-1 text-xs text-[var(--muted)]/80">
+                Revenue trends will plot automatically once sales invoices are issued.
               </p>
             </div>
-
-            <select
-              defaultValue="2026"
-              className="h-9 rounded-lg border border-[var(--border)] bg-white px-3 text-xs font-medium text-[var(--muted)] outline-none transition focus:border-[var(--primary)]"
-            >
-              <option>2026</option>
-              <option>2025</option>
-            </select>
-          </div>
-
-          <div className="mt-6 h-[260px] w-full sm:h-[280px]">
+          ) : (
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart
                 data={salesData}
-                margin={{
-                  top: 10,
-                  right: 5,
-                  left: -20,
-                  bottom: 0,
-                }}
+                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
               >
                 <defs>
-                  <linearGradient
-                    id="salesGradient"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="0%"
-                      stopColor="#176b52"
-                      stopOpacity={0.2}
-                    />
-
-                    <stop
-                      offset="100%"
-                      stopColor="#176b52"
-                      stopOpacity={0}
-                    />
+                  <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#176b52" stopOpacity={0.2} />
+                    <stop offset="95%" stopColor="#176b52" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-
-                <CartesianGrid
-                  vertical={false}
-                  stroke="#edf1ef"
-                />
-
-                <XAxis
-                  dataKey="month"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{
-                    fill: "#718078",
-                    fontSize: 11,
-                  }}
-                />
-
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{
-                    fill: "#718078",
-                    fontSize: 11,
-                  }}
-                  tickFormatter={(value) => `$${value / 1000}k`}
-                />
-
-                <Tooltip
-                  contentStyle={{
-                    border: "1px solid #e3e9e6",
-                    borderRadius: "12px",
-                    boxShadow:
-                      "0 8px 24px rgba(24, 33, 29, 0.08)",
-                  }}
-                  formatter={(value) => [
-                    `$${Number(value).toLocaleString()}`,
-                    "Sales",
-                  ]}
-                />
-
-                <Area
-                  type="monotone"
-                  dataKey="sales"
-                  stroke="#176b52"
-                  strokeWidth={2.5}
-                  fill="url(#salesGradient)"
-                  dot={false}
-                  activeDot={{
-                    r: 5,
-                    fill: "#176b52",
-                    stroke: "#ffffff",
-                    strokeWidth: 2,
-                  }}
-                />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf1ef" />
+                <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fill: "#718078", fontSize: 12 }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fill: "#718078", fontSize: 12 }} />
+                <Tooltip />
+                <Area type="monotone" dataKey="sales" stroke="#176b52" strokeWidth={2} fillOpacity={1} fill="url(#salesGradient)" />
               </AreaChart>
             </ResponsiveContainer>
-          </div>
-        </section>
+          )}
+        </div>
+      </section>
 
-        {/* Inventory summary */}
-        <section className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm sm:p-6">
-          <div>
-            <h2 className="font-semibold text-[var(--foreground)]">
-              Inventory summary
-            </h2>
-
-            <p className="mt-1 text-sm text-[var(--muted)]">
-              Current inventory position
-            </p>
-          </div>
-
-          <div className="mt-6 rounded-2xl bg-[var(--muted-background)] p-5">
-            <p className="text-xs font-medium text-[var(--muted)]">
-              Inventory value
-            </p>
-
-            <p className="mt-2 text-2xl font-semibold tracking-tight text-[var(--foreground)]">
-              $184,620
-            </p>
-
-            <p className="mt-1 text-xs text-[var(--muted)]">
-              Across all warehouses
-            </p>
-          </div>
-
-          <div className="mt-5 divide-y divide-[var(--border-light)]">
-            <div className="flex items-center justify-between py-4">
-              <span className="text-sm text-[var(--muted)]">
-                Total products
-              </span>
-
-              <span className="font-semibold text-[var(--foreground)]">
-                428
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between py-4">
-              <span className="text-sm text-[var(--muted)]">
-                In stock
-              </span>
-
-              <span className="font-semibold text-[var(--primary)]">
-                392
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between py-4">
-              <span className="text-sm text-[var(--muted)]">
-                Low stock
-              </span>
-
-              <span className="font-semibold text-[var(--warning)]">
-                36
-              </span>
-            </div>
-          </div>
-        </section>
-      </div>
-
-      {/* Recent invoices + Low stock */}
-      <div className="grid gap-6 xl:grid-cols-[1.5fr_1fr]">
+      {/* Bottom two-column layout */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Recent invoices */}
-        <section className="min-w-0 rounded-2xl border border-[var(--border)] bg-white shadow-sm">
+        <section className="rounded-2xl border border-[var(--border)] bg-white shadow-sm lg:col-span-2">
           <div className="flex items-center justify-between border-b border-[var(--border-light)] px-5 py-4">
             <div>
               <h2 className="font-semibold text-[var(--foreground)]">
@@ -374,7 +211,7 @@ export default function DashboardPage() {
               </h2>
 
               <p className="mt-1 text-xs text-[var(--muted)]">
-                Latest customer invoices
+                Latest billing activity and payment statuses
               </p>
             </div>
 
@@ -387,9 +224,9 @@ export default function DashboardPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[650px] text-sm">
-              <thead>
-                <tr className="border-b border-[var(--border-light)] text-left">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-[var(--border-light)] bg-[var(--muted-background)]/50 text-xs">
+                <tr>
                   <th className="px-5 py-3 font-medium text-[var(--muted)]">
                     Invoice
                   </th>
@@ -413,49 +250,59 @@ export default function DashboardPage() {
               </thead>
 
               <tbody>
-                {recentInvoices.map((invoice) => (
-                  <tr
-                    key={invoice.invoice}
-                    className="border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--muted-background)]"
-                  >
-                    <td className="px-5 py-4 font-medium text-[var(--foreground)]">
-                      {invoice.invoice}
-                    </td>
-
-                    <td className="px-5 py-4 text-[var(--muted)]">
-                      {invoice.customer}
-                    </td>
-
-                    <td className="px-5 py-4 text-[var(--muted)]">
-                      {invoice.date}
-                    </td>
-
-                    <td className="px-5 py-4 text-right font-medium text-[var(--foreground)]">
-                      {invoice.amount}
-                    </td>
-
-                    <td className="px-5 py-4 text-right">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-                          invoice.status === "Paid"
-                            ? "bg-[var(--primary-light)] text-[var(--primary)]"
-                            : invoice.status === "Pending"
-                              ? "bg-amber-50 text-amber-700"
-                              : "bg-red-50 text-red-600"
-                        }`}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                        {invoice.status}
-                      </span>
+                {recentInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="py-12 text-center">
+                      <div className="flex flex-col items-center justify-center">
+                        <FileText size={28} className="text-[var(--muted)]/60" />
+                        <p className="mt-2 text-sm font-medium text-[var(--foreground)]">
+                          No recent invoices available
+                        </p>
+                        <p className="mt-0.5 text-xs text-[var(--muted)]">
+                          Invoices created in the system will display here.
+                        </p>
+                      </div>
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  recentInvoices.map((inv) => (
+                    <tr
+                      key={inv.id}
+                      className="border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--muted-background)]"
+                    >
+                      <td className="px-5 py-4 font-medium text-[var(--foreground)]">
+                        <Link href={`/invoices/view/${inv.id}`} className="hover:underline text-[var(--primary)]">
+                          {inv.invoiceNumber}
+                        </Link>
+                      </td>
+
+                      <td className="px-5 py-4 text-[var(--muted)]">
+                        {inv.buyerName}
+                      </td>
+
+                      <td className="px-5 py-4 text-[var(--muted)]">
+                        {inv.invoiceDate}
+                      </td>
+
+                      <td className="px-5 py-4 text-right font-medium text-[var(--foreground)]">
+                        ${Number(inv.grandTotal || 0).toFixed(2)}
+                      </td>
+
+                      <td className="px-5 py-4 text-right">
+                        <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-[var(--primary-light)] text-[var(--primary)]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                          {inv.paymentStatus || inv.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </section>
 
-        {/* Low stock */}
+        {/* Low stock alerts */}
         <section className="rounded-2xl border border-[var(--border)] bg-white shadow-sm">
           <div className="flex items-center justify-between border-b border-[var(--border-light)] px-5 py-4">
             <div>
@@ -477,56 +324,36 @@ export default function DashboardPage() {
           </div>
 
           <div className="divide-y divide-[var(--border-light)]">
-            {lowStock.map((product) => {
-              const stockPercentage = Math.min(
-                (product.stock / product.reorder) * 100,
-                100,
-              );
-
-              return (
+            {lowStock.length === 0 ? (
+              <div className="flex flex-col items-center justify-center p-8 text-center">
+                <PackageOpen size={30} className="text-[var(--muted)]/60" />
+                <p className="mt-2 text-sm font-medium text-[var(--foreground)]">
+                  No low stock alerts
+                </p>
+                <p className="mt-0.5 text-xs text-[var(--muted)]">
+                  All items are above safety reorder thresholds.
+                </p>
+              </div>
+            ) : (
+              lowStock.slice(0, 5).map((item) => (
                 <div
-                  key={product.sku}
-                  className="p-4 transition-colors hover:bg-[var(--muted-background)]"
+                  key={`${item.productId}-${item.warehouseId}`}
+                  className="flex items-center justify-between p-4"
                 >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-[var(--foreground)]">
-                        {product.product}
-                      </p>
-
-                      <p className="mt-1 text-xs text-[var(--muted)]">
-                        SKU: {product.sku}
-                      </p>
-                    </div>
-
-                    <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                      Low stock
+                  <div>
+                    <p className="text-sm font-medium text-[var(--foreground)]">
+                      {item.productName}
+                    </p>
+                    <p className="text-xs text-[var(--muted)]">{item.sku} • {item.warehouseName}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-medium text-amber-600">
+                      {item.onHand} / {item.reorderLevel}
                     </span>
                   </div>
-
-                  <div className="mt-4">
-                    <div className="mb-2 flex justify-between text-xs">
-                      <span className="text-[var(--muted)]">
-                        Stock level
-                      </span>
-
-                      <span className="font-medium text-[var(--foreground)]">
-                        {product.stock} / {product.reorder}
-                      </span>
-                    </div>
-
-                    <div className="h-1.5 overflow-hidden rounded-full bg-[var(--muted-background)]">
-                      <div
-                        className="h-full rounded-full bg-[var(--warning)]"
-                        style={{
-                          width: `${stockPercentage}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
                 </div>
-              );
-            })}
+              ))
+            )}
           </div>
         </section>
       </div>

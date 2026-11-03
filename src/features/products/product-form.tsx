@@ -1,14 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ChangeEvent,
   FormEvent,
+  useEffect,
   useState,
 } from "react";
 import {
+  AlertCircle,
   ArrowLeft,
   ImagePlus,
+  Loader2,
   Package,
   Plus,
   Save,
@@ -17,6 +21,9 @@ import {
 } from "lucide-react";
 
 import type { Product } from "./product.types";
+import type { Category } from "@/features/categories/category.types";
+import { createProductApi, updateProductApi } from "@/lib/api/product.api";
+import { getCategoriesApi } from "@/lib/api/category.api";
 
 type PlatformMapping = {
   id: string;
@@ -33,101 +40,121 @@ interface ProductFormProps {
 
 const salesChannels = ["Website", "Amazon", "Wayfair"];
 
-const categories = [
-  "Bedding",
-  "Furniture",
-  "Home Decor",
-  "Lighting",
-];
+const units = ["PCS", "SET", "BOX", "PAIR", "KG"];
 
-const units = [
-  "PCS",
-  "SET",
-  "BOX",
-  "PAIR",
-  "KG",
-];
-
-export function ProductForm({
-  mode,
-  product,
-}: ProductFormProps) {
+export function ProductForm({ mode, product }: ProductFormProps) {
+  const router = useRouter();
   const isEdit = mode === "edit";
+
+  // Categories from Backend
+  const [categoriesList, setCategoriesList] = useState<Category[]>([]);
+
+  // Initial categoryId
+  const initialCategoryId =
+    product?.categoryId ??
+    (typeof product?.category === "object" && product.category
+      ? product.category.id
+      : undefined);
 
   const [name, setName] = useState(product?.name ?? "");
   const [sku, setSku] = useState(product?.sku ?? "");
-  const [category, setCategory] = useState(product?.category ?? "");
+  const [categoryId, setCategoryId] = useState<string>(
+    initialCategoryId ? String(initialCategoryId) : ""
+  );
   const [uom, setUom] = useState(product?.uom ?? "PCS");
   const [costPrice, setCostPrice] = useState(
-    product?.costPrice?.toString() ?? "",
+    product?.costPrice?.toString() ?? ""
   );
   const [sellingPrice, setSellingPrice] = useState(
-    product?.sellingPrice?.toString() ?? "",
+    product?.sellingPrice?.toString() ?? ""
   );
   const [taxRate, setTaxRate] = useState(
-    product?.taxRate?.toString() ?? "",
+    product?.taxRate?.toString() ?? "8.25"
   );
-  const [stock, setStock] = useState(
-    product?.stock?.toString() ?? "",
-  );
+  const [stock, setStock] = useState(product?.stock?.toString() ?? "0");
   const [reorderLevel, setReorderLevel] = useState(
-    product?.reorderLevel?.toString() ?? "",
+    product?.reorderLevel?.toString() ?? "10"
   );
-  const [status, setStatus] = useState<
-    "ACTIVE" | "INACTIVE"
-  >(product?.status ?? "ACTIVE");
-
-  const [imageUrl, setImageUrl] = useState(
-    product?.imageUrl ?? "",
+  const [status, setStatus] = useState<"ACTIVE" | "INACTIVE">(
+    product?.status ?? "ACTIVE"
   );
 
-  const [platformMappings, setPlatformMappings] =
-    useState<PlatformMapping[]>(
-      product?.salesChannels?.length
-        ? product.salesChannels.map((platform, index) => ({
-            id: `platform-${index}`,
-            platform,
-            sku: product.sku,
-            sellingPrice: product.sellingPrice.toString(),
+  // Image upload
+  const [imageUrl, setImageUrl] = useState(product?.imageUrl ?? "");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+
+  // Submit states
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  // Platform Mappings
+  const [platformMappings, setPlatformMappings] = useState<PlatformMapping[]>(
+    product?.salesChannels?.length
+      ? product.salesChannels.map((platform, index) => ({
+          id: `platform-${index}`,
+          platform,
+          sku: product.sku,
+          sellingPrice: product.sellingPrice.toString(),
+          status: "ACTIVE",
+        }))
+      : [
+          {
+            id: "platform-0",
+            platform: "Website",
+            sku: product?.sku ?? "",
+            sellingPrice: product?.sellingPrice?.toString() ?? "",
             status: "ACTIVE",
-          }))
-        : [
-            {
-              id: "platform-0",
-              platform: "Website",
-              sku: product?.sku ?? "",
-              sellingPrice:
-                product?.sellingPrice?.toString() ?? "",
-              status: "ACTIVE",
-            },
-          ],
-    );
+          },
+        ]
+  );
 
-  const handleImageChange = (
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
+  // Load real categories from API
+  useEffect(() => {
+    getCategoriesApi({ limit: "all" })
+      .then((res) => {
+        if (res.success && res.data) {
+          setCategoriesList(res.data);
+          // If editing and category name matches an item, set categoryId
+          if (!categoryId && product?.category) {
+            const found = res.data.find(
+              (c) =>
+                c.name === product.category ||
+                (typeof product.category === "object" &&
+                  c.id === product.category?.id)
+            );
+            if (found) setCategoryId(String(found.id));
+          }
+        }
+      })
+      .catch((err) => {
+        console.error("Failed to fetch categories list", err);
+      });
+  }, [categoryId, product]);
+
+  const handleImageChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
+    if (!file) return;
 
-    if (!file) {
-      return;
-    }
-
+    setSelectedFile(file);
     const previewUrl = URL.createObjectURL(file);
     setImageUrl(previewUrl);
   };
 
+  const handleRemoveImage = () => {
+    setSelectedFile(null);
+    setImageUrl("");
+  };
+
   const addPlatform = () => {
     const usedPlatforms = new Set(
-      platformMappings.map((item) => item.platform),
+      platformMappings.map((item) => item.platform)
     );
 
     const nextPlatform = salesChannels.find(
-      (platform) => !usedPlatforms.has(platform),
+      (platform) => !usedPlatforms.has(platform)
     );
 
-    if (!nextPlatform) {
-      return;
-    }
+    if (!nextPlatform) return;
 
     setPlatformMappings((current) => [
       ...current,
@@ -144,7 +171,7 @@ export function ProductForm({
   const updatePlatform = (
     id: string,
     field: keyof PlatformMapping,
-    value: string,
+    value: string
   ) => {
     setPlatformMappings((current) =>
       current.map((item) =>
@@ -153,46 +180,100 @@ export function ProductForm({
               ...item,
               [field]: value,
             }
-          : item,
-      ),
+          : item
+      )
     );
   };
 
   const removePlatform = (id: string) => {
     setPlatformMappings((current) =>
-      current.filter((item) => item.id !== id),
+      current.filter((item) => item.id !== id)
     );
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setIsSubmitting(true);
+    setErrorMessage(null);
 
-    const formData = {
-      name,
-      sku,
-      category,
-      uom,
-      costPrice: Number(costPrice),
-      sellingPrice: Number(sellingPrice),
-      taxRate: Number(taxRate),
-      stock: Number(stock),
-      reorderLevel: Number(reorderLevel),
-      status,
-      imageUrl,
-      platformMappings,
-    };
+    const channelList = platformMappings.map((m) => m.platform);
 
-    console.log(
-      isEdit ? "Update product:" : "Create product:",
-      formData,
-    );
+    try {
+      if (selectedFile) {
+        // Send multipart form data with image file
+        const formData = new FormData();
+        formData.append("name", name.trim());
+        formData.append("sku", sku.trim().toUpperCase());
+        if (categoryId) formData.append("categoryId", categoryId);
+        formData.append("uom", uom);
+        formData.append("costPrice", costPrice || "0");
+        formData.append("sellingPrice", sellingPrice || "0");
+        formData.append("taxRate", taxRate || "0");
+        formData.append("stock", stock || "0");
+        formData.append("reorderLevel", reorderLevel || "10");
+        formData.append("status", status);
+        formData.append("salesChannels", JSON.stringify(channelList));
+        formData.append("image", selectedFile);
+
+        if (isEdit && product?.id) {
+          await updateProductApi(product.id, formData);
+        } else {
+          await createProductApi(formData);
+        }
+      } else {
+        // Send standard JSON payload
+        const payload = {
+          name: name.trim(),
+          sku: sku.trim().toUpperCase(),
+          categoryId: categoryId ? Number(categoryId) : null,
+          uom,
+          costPrice: Number(costPrice || 0),
+          sellingPrice: Number(sellingPrice || 0),
+          taxRate: Number(taxRate || 0),
+          stock: Number(stock || 0),
+          reorderLevel: Number(reorderLevel || 10),
+          status,
+          imageUrl: imageUrl || null,
+          salesChannels: channelList,
+        };
+
+        if (isEdit && product?.id) {
+          await updateProductApi(product.id, payload);
+        } else {
+          await createProductApi(payload);
+        }
+      }
+
+      router.push("/products");
+      router.refresh();
+    } catch (err: any) {
+      setErrorMessage(
+        err.message || "Failed to save product. Please try again."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const availablePlatformCount =
-    salesChannels.length - platformMappings.length;
+  const availablePlatformCount = salesChannels.length - platformMappings.length;
+
+  const currentCategoryName =
+    categoriesList.find((c) => String(c.id) === categoryId)?.name ||
+    (typeof product?.category === "object" && product?.category
+      ? product.category.name
+      : typeof product?.category === "string"
+      ? product.category
+      : "");
 
   return (
     <div className="mx-auto max-w-7xl">
+      {errorMessage && (
+        <div className="mb-6 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertCircle size={18} className="shrink-0 text-red-600" />
+          <p className="flex-1 font-medium">{errorMessage}</p>
+        </div>
+      )}
+
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <Link
@@ -226,19 +307,20 @@ export function ProductForm({
           <button
             type="submit"
             form="product-form"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+            disabled={isSubmitting}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)] disabled:opacity-50"
           >
-            <Save size={16} />
+            {isSubmitting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
             {isEdit ? "Save Changes" : "Save Product"}
           </button>
         </div>
       </div>
 
-      <form
-        id="product-form"
-        onSubmit={handleSubmit}
-        className="space-y-5"
-      >
+      <form id="product-form" onSubmit={handleSubmit} className="space-y-5">
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">
             <section className="rounded-xl border border-[var(--border)] bg-white">
@@ -257,34 +339,42 @@ export function ProductForm({
                   <input
                     className="form-input"
                     value={name}
-                    onChange={(event) =>
-                      setName(event.target.value)
-                    }
+                    onChange={(event) => setName(event.target.value)}
                     placeholder="e.g. Luna Accent Chair"
                     required
+                    disabled={isSubmitting}
                   />
                 </FormField>
 
                 <FormField label="SKU" required>
                   <input
-                    className="form-input"
+                    className="form-input font-mono uppercase"
                     value={sku}
                     onChange={(event) =>
-                      setSku(event.target.value)
+                      setSku(
+                        event.target.value.toUpperCase().replace(/\s/g, "")
+                      )
                     }
                     placeholder="e.g. CHR-001"
                     required
+                    disabled={isSubmitting}
                   />
                 </FormField>
 
-                <FormField label="Category" required>
-                  <SelectInput
-                    value={category}
-                    onChange={setCategory}
-                    options={categories}
-                    placeholder="Select category"
-                    required
-                  />
+                <FormField label="Category">
+                  <select
+                    className="form-input"
+                    value={categoryId}
+                    onChange={(event) => setCategoryId(event.target.value)}
+                    disabled={isSubmitting}
+                  >
+                    <option value="">Select a category</option>
+                    {categoriesList.map((cat) => (
+                      <option key={cat.id} value={String(cat.id)}>
+                        {cat.name} ({cat.code})
+                      </option>
+                    ))}
+                  </select>
                 </FormField>
 
                 <FormField label="Unit of Measure" required>
@@ -293,6 +383,7 @@ export function ProductForm({
                     onChange={setUom}
                     options={units}
                     required
+                    disabled={isSubmitting}
                   />
                 </FormField>
 
@@ -300,11 +391,10 @@ export function ProductForm({
                   <SelectInput
                     value={status}
                     onChange={(value) =>
-                      setStatus(
-                        value as "ACTIVE" | "INACTIVE",
-                      )
+                      setStatus(value as "ACTIVE" | "INACTIVE")
                     }
                     options={["ACTIVE", "INACTIVE"]}
+                    disabled={isSubmitting}
                   />
                 </FormField>
               </div>
@@ -323,6 +413,7 @@ export function ProductForm({
                     value={costPrice}
                     onChange={setCostPrice}
                     placeholder="0.00"
+                    disabled={isSubmitting}
                   />
                 </FormField>
 
@@ -332,15 +423,17 @@ export function ProductForm({
                     value={sellingPrice}
                     onChange={setSellingPrice}
                     placeholder="0.00"
+                    disabled={isSubmitting}
                   />
                 </FormField>
 
-                <FormField label="Tax Rate" required>
+                <FormField label="Tax Rate (%)" required>
                   <InputWithSuffix
                     suffix="%"
                     value={taxRate}
                     onChange={setTaxRate}
-                    placeholder="0.00"
+                    placeholder="8.25"
+                    disabled={isSubmitting}
                   />
                 </FormField>
               </div>
@@ -359,11 +452,10 @@ export function ProductForm({
                     type="number"
                     min="0"
                     value={stock}
-                    onChange={(event) =>
-                      setStock(event.target.value)
-                    }
+                    onChange={(event) => setStock(event.target.value)}
                     placeholder="0"
                     required
+                    disabled={isSubmitting}
                   />
                 </FormField>
 
@@ -373,11 +465,10 @@ export function ProductForm({
                     type="number"
                     min="0"
                     value={reorderLevel}
-                    onChange={(event) =>
-                      setReorderLevel(event.target.value)
-                    }
-                    placeholder="0"
+                    onChange={(event) => setReorderLevel(event.target.value)}
+                    placeholder="10"
                     required
+                    disabled={isSubmitting}
                   />
                 </FormField>
               </div>
@@ -392,7 +483,8 @@ export function ProductForm({
                     <button
                       type="button"
                       onClick={addPlatform}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--muted-background)]"
+                      disabled={isSubmitting}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 text-sm font-medium text-[var(--foreground)] transition hover:bg-[var(--muted-background)] disabled:opacity-50"
                     >
                       <Plus size={15} />
                       Add Platform
@@ -408,8 +500,7 @@ export function ProductForm({
                       No sales channels mapped
                     </p>
                     <p className="mt-1 text-xs text-[var(--muted)]">
-                      Add a platform to define channel-specific
-                      SKU and pricing.
+                      Add a platform to define channel-specific SKU and pricing.
                     </p>
                   </div>
                 ) : (
@@ -449,26 +540,24 @@ export function ProductForm({
                                   updatePlatform(
                                     mapping.id,
                                     "platform",
-                                    event.target.value,
+                                    event.target.value
                                   )
                                 }
+                                disabled={isSubmitting}
                               >
                                 {salesChannels.map((platform) => {
                                   const usedByOtherRow =
                                     platformMappings.some(
                                       (item) =>
                                         item.id !== mapping.id &&
-                                        item.platform ===
-                                          platform,
+                                        item.platform === platform
                                     );
 
                                   return (
                                     <option
                                       key={platform}
                                       value={platform}
-                                      disabled={
-                                        usedByOtherRow
-                                      }
+                                      disabled={usedByOtherRow}
                                     >
                                       {platform}
                                     </option>
@@ -479,16 +568,17 @@ export function ProductForm({
 
                             <td className="py-3 pr-4">
                               <input
-                                className="form-input"
+                                className="form-input uppercase"
                                 value={mapping.sku}
                                 onChange={(event) =>
                                   updatePlatform(
                                     mapping.id,
                                     "sku",
-                                    event.target.value,
+                                    event.target.value
                                   )
                                 }
                                 placeholder="Platform SKU"
+                                disabled={isSubmitting}
                               />
                             </td>
 
@@ -500,10 +590,11 @@ export function ProductForm({
                                   updatePlatform(
                                     mapping.id,
                                     "sellingPrice",
-                                    value,
+                                    value
                                   )
                                 }
                                 placeholder="0.00"
+                                disabled={isSubmitting}
                               />
                             </td>
 
@@ -515,28 +606,22 @@ export function ProductForm({
                                   updatePlatform(
                                     mapping.id,
                                     "status",
-                                    event.target.value,
+                                    event.target.value
                                   )
                                 }
+                                disabled={isSubmitting}
                               >
-                                <option value="ACTIVE">
-                                  Active
-                                </option>
-                                <option value="INACTIVE">
-                                  Inactive
-                                </option>
+                                <option value="ACTIVE">Active</option>
+                                <option value="INACTIVE">Inactive</option>
                               </select>
                             </td>
 
                             <td className="py-3 text-right">
                               <button
                                 type="button"
-                                onClick={() =>
-                                  removePlatform(mapping.id)
-                                }
+                                onClick={() => removePlatform(mapping.id)}
                                 disabled={
-                                  platformMappings.length ===
-                                  1
+                                  platformMappings.length === 1 || isSubmitting
                                 }
                                 className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-[var(--danger)] transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
                                 aria-label={`Remove ${mapping.platform}`}
@@ -553,8 +638,7 @@ export function ProductForm({
 
                 {availablePlatformCount === 0 && (
                   <p className="mt-3 text-xs text-[var(--muted)]">
-                    All available sales channels are already
-                    mapped.
+                    All available sales channels are already mapped.
                   </p>
                 )}
               </div>
@@ -565,7 +649,7 @@ export function ProductForm({
             <section className="rounded-xl border border-[var(--border)] bg-white">
               <SectionHeader
                 title="Product Image"
-                description="Upload an image for product identification."
+                description="Upload an image to Cloudinary for catalog identification."
               />
 
               <div className="p-5">
@@ -580,7 +664,8 @@ export function ProductForm({
 
                       <button
                         type="button"
-                        onClick={() => setImageUrl("")}
+                        onClick={handleRemoveImage}
+                        disabled={isSubmitting}
                         className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 text-[var(--muted)] shadow-sm transition hover:text-[var(--danger)]"
                         aria-label="Remove image"
                       >
@@ -593,18 +678,17 @@ export function ProductForm({
                         <ImagePlus size={22} />
                       </div>
 
-                      <p className="text-sm font-medium">
-                        Upload product image
-                      </p>
+                      <p className="text-sm font-medium">Upload product image</p>
 
                       <p className="mt-1 text-xs text-[var(--muted)]">
-                        PNG, JPG or WEBP
+                        PNG, JPG, WEBP (Max 5MB)
                       </p>
 
                       <input
                         type="file"
                         accept="image/png,image/jpeg,image/webp"
                         onChange={handleImageChange}
+                        disabled={isSubmitting}
                         className="sr-only"
                       />
                     </label>
@@ -617,34 +701,23 @@ export function ProductForm({
               <SectionHeader title="Product Summary" />
 
               <div className="divide-y divide-[var(--border-light)] px-5">
-                <SummaryRow
-                  label="Product"
-                  value={name || "—"}
-                />
+                <SummaryRow label="Product" value={name || "—"} />
 
-                <SummaryRow
-                  label="SKU"
-                  value={sku || "—"}
-                />
+                <SummaryRow label="SKU" value={sku || "—"} />
 
                 <SummaryRow
                   label="Category"
-                  value={category || "—"}
+                  value={currentCategoryName || "Unassigned"}
                 />
 
                 <SummaryRow
                   label="Selling Price"
                   value={
-                    sellingPrice
-                      ? `$${Number(sellingPrice).toFixed(2)}`
-                      : "—"
+                    sellingPrice ? `$${Number(sellingPrice).toFixed(2)}` : "—"
                   }
                 />
 
-                <SummaryRow
-                  label="Stock"
-                  value={stock || "0"}
-                />
+                <SummaryRow label="Stock" value={stock || "0"} />
 
                 <SummaryRow
                   label="Platforms"
@@ -665,9 +738,14 @@ export function ProductForm({
 
           <button
             type="submit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+            disabled={isSubmitting}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)] disabled:opacity-50"
           >
-            <Save size={16} />
+            {isSubmitting ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Save size={16} />
+            )}
             {isEdit ? "Save Changes" : "Save Product"}
           </button>
         </div>
@@ -690,16 +768,10 @@ function SectionHeader({
   return (
     <div className="flex items-start justify-between gap-4 border-b border-[var(--border)] px-5 py-4">
       <div className="flex items-start gap-2.5">
-        {icon && (
-          <div className="mt-0.5 text-[var(--primary)]">
-            {icon}
-          </div>
-        )}
+        {icon && <div className="mt-0.5 text-[var(--primary)]">{icon}</div>}
 
         <div>
-          <h2 className="text-sm font-semibold">
-            {title}
-          </h2>
+          <h2 className="text-sm font-semibold">{title}</h2>
 
           {description && (
             <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
@@ -729,11 +801,7 @@ function FormField({
     <div className={className}>
       <label className="mb-1.5 block text-sm font-medium">
         {label}
-        {required && (
-          <span className="ml-1 text-[var(--danger)]">
-            *
-          </span>
-        )}
+        {required && <span className="ml-1 text-[var(--danger)]">*</span>}
       </label>
 
       {children}
@@ -747,25 +815,24 @@ function SelectInput({
   options,
   placeholder,
   required,
+  disabled,
 }: {
   value: string;
   onChange: (value: string) => void;
   options: string[];
   placeholder?: string;
   required?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <select
       className="form-input"
       value={value}
-      onChange={(event) =>
-        onChange(event.target.value)
-      }
+      onChange={(event) => onChange(event.target.value)}
       required={required}
+      disabled={disabled}
     >
-      {placeholder && (
-        <option value="">{placeholder}</option>
-      )}
+      {placeholder && <option value="">{placeholder}</option>}
 
       {options.map((option) => (
         <option key={option} value={option}>
@@ -781,11 +848,13 @@ function InputWithPrefix({
   value,
   onChange,
   placeholder,
+  disabled,
 }: {
   prefix: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   return (
     <div className="relative">
@@ -799,10 +868,9 @@ function InputWithPrefix({
         min="0"
         step="0.01"
         value={value}
-        onChange={(event) =>
-          onChange(event.target.value)
-        }
+        onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        disabled={disabled}
       />
     </div>
   );
@@ -813,11 +881,13 @@ function InputWithSuffix({
   value,
   onChange,
   placeholder,
+  disabled,
 }: {
   suffix: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   return (
     <div className="relative">
@@ -827,10 +897,9 @@ function InputWithSuffix({
         min="0"
         step="0.01"
         value={value}
-        onChange={(event) =>
-          onChange(event.target.value)
-        }
+        onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
+        disabled={disabled}
       />
 
       <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--muted)]">
@@ -840,18 +909,10 @@ function InputWithSuffix({
   );
 }
 
-function SummaryRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-4 py-3">
-      <span className="text-sm text-[var(--muted)]">
-        {label}
-      </span>
+      <span className="text-sm text-[var(--muted)]">{label}</span>
 
       <span className="max-w-[60%] truncate text-right text-sm font-medium">
         {value}

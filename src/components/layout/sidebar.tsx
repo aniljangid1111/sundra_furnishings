@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -22,6 +23,8 @@ import {
   Warehouse,
   X,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth/auth-context";
+import { canAccessPath } from "@/lib/auth/permissions";
 
 const menuSections = [
   {
@@ -130,6 +133,12 @@ export function Sidebar({
   onCloseMobile,
 }: SidebarProps) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   return (
     <>
@@ -218,54 +227,61 @@ export function Sidebar({
 
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-5">
-          {menuSections.map((section) => (
-            <div key={section.title} className="mb-6">
-              {!collapsed && (
-                <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
-                  {section.title}
-                </p>
-              )}
+          {menuSections.map((section) => {
+            const visibleItems = section.items.filter((item) =>
+              isMounted ? canAccessPath(user, item.href) : true
+            );
+            if (visibleItems.length === 0) return null;
 
-              <div className="space-y-1">
-                {section.items.map((item) => {
-                  const Icon = item.icon;
+            return (
+              <div key={section.title} className="mb-6">
+                {!collapsed && (
+                  <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--muted)]">
+                    {section.title}
+                  </p>
+                )}
 
-                  const isActive =
-                    pathname === item.href ||
-                    pathname.startsWith(`${item.href}/`);
+                <div className="space-y-1">
+                  {visibleItems.map((item) => {
+                    const Icon = item.icon;
 
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={onCloseMobile}
-                      title={collapsed ? item.label : undefined}
-                      className={`group relative flex h-11 items-center gap-3 overflow-hidden rounded-xl px-3 text-sm transition-all ${collapsed ? "justify-center" : ""
-                        } ${isActive
-                          ? "bg-gradient-to-r from-[var(--primary-light)] via-[#eff7f3] to-transparent font-medium text-[var(--primary)]"
-                          : "text-[var(--muted)] hover:bg-[var(--muted-background)] hover:text-[var(--foreground)]"
-                        }`}
-                    >
-                      {isActive && (
-                        <span className="absolute left-0 top-2 h-7 w-[3px] rounded-r-full bg-[var(--primary)]" />
-                      )}
+                    const isActive =
+                      pathname === item.href ||
+                      pathname.startsWith(`${item.href}/`);
 
-                      <span
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${isActive
-                          ? "bg-white text-[var(--primary)] shadow-sm"
-                          : "text-[var(--muted)] group-hover:text-[var(--foreground)]"
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={onCloseMobile}
+                        title={collapsed ? item.label : undefined}
+                        className={`group relative flex h-11 items-center gap-3 overflow-hidden rounded-xl px-3 text-sm transition-all ${collapsed ? "justify-center" : ""
+                          } ${isActive
+                            ? "bg-gradient-to-r from-[var(--primary-light)] via-[#eff7f3] to-transparent font-medium text-[var(--primary)]"
+                            : "text-[var(--muted)] hover:bg-[var(--muted-background)] hover:text-[var(--foreground)]"
                           }`}
                       >
-                        <Icon size={17} strokeWidth={1.8} />
-                      </span>
+                        {isActive && (
+                          <span className="absolute left-0 top-2 h-7 w-[3px] rounded-r-full bg-[var(--primary)]" />
+                        )}
 
-                      {!collapsed && <span>{item.label}</span>}
-                    </Link>
-                  );
-                })}
+                        <span
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${isActive
+                            ? "bg-white text-[var(--primary)] shadow-sm"
+                            : "text-[var(--muted)] group-hover:text-[var(--foreground)]"
+                            }`}
+                        >
+                          <Icon size={17} strokeWidth={1.8} />
+                        </span>
+
+                        {!collapsed && <span>{item.label}</span>}
+                      </Link>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
       </aside>
     </>

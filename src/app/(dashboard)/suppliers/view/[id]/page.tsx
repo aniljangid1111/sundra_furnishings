@@ -1,26 +1,28 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import {
+  AlertCircle,
   ArrowLeft,
   Building2,
   Calendar,
   CreditCard,
   FileText,
+  Loader2,
   Mail,
   MapPin,
   Pencil,
   Phone,
-  ShoppingCart,
   User,
-  Users,
 } from "lucide-react";
-import { suppliers } from "@/features/suppliers/supplier.data";
 
-interface SupplierViewPageProps {
-  params: Promise<{ id: string }>;
-}
+import { getSupplierByIdApi } from "@/lib/api/supplier.api";
+import { PermissionGate } from "@/lib/auth/permissions";
+import type { Supplier } from "@/features/suppliers/supplier.types";
 
-function formatDate(dateStr: string) {
+function formatDate(dateStr?: string) {
   if (!dateStr) return "—";
   try {
     const d = new Date(dateStr);
@@ -34,15 +36,75 @@ function formatDate(dateStr: string) {
   }
 }
 
-export default async function SupplierViewPage({
-  params,
-}: SupplierViewPageProps) {
-  const { id } = await params;
+export default function SupplierViewPage() {
+  const params = useParams();
+  const id = params?.id as string;
 
-  const supplier = suppliers.find((item) => item.id === Number(id));
+  const [supplier, setSupplier] = useState<Supplier | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!supplier) {
-    notFound();
+  useEffect(() => {
+    if (!id) return;
+    let mounted = true;
+    setIsLoading(true);
+    setError(null);
+
+    getSupplierByIdApi(id)
+      .then((res) => {
+        if (!mounted) return;
+        if (res.success && res.data) {
+          setSupplier(res.data);
+        } else {
+          setError(res.message || "Supplier not found");
+        }
+      })
+      .catch((err: any) => {
+        if (!mounted) return;
+        setError(err.message || "Failed to load supplier details");
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-72 items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-[var(--muted)]">
+          <Loader2 size={32} className="animate-spin text-[var(--primary)]" />
+          <p className="text-sm font-medium">Loading supplier details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !supplier) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-2xl border border-[var(--border)] bg-white p-8 text-center shadow-xs">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600">
+          <AlertCircle size={26} />
+        </div>
+        <h2 className="mt-4 text-lg font-semibold tracking-tight text-[var(--foreground)]">
+          Supplier Not Found
+        </h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          {error || "The supplier you are looking for does not exist."}
+        </p>
+        <div className="mt-6 flex justify-center">
+          <Link
+            href="/suppliers"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-xs font-medium text-white transition hover:bg-[var(--primary-dark)]"
+          >
+            <ArrowLeft size={14} /> Back to Suppliers
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   const isBusiness = supplier.supplierType === "BUSINESS";
@@ -86,17 +148,19 @@ export default async function SupplierViewPage({
           </div>
         </div>
 
-        <Link
-          href={`/suppliers/edit/${supplier.id}`}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
-        >
-          <Pencil size={16} />
-          Edit Supplier
-        </Link>
+        <PermissionGate module="suppliers" action="edit">
+          <Link
+            href={`/suppliers/edit/${supplier.id}`}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+          >
+            <Pencil size={16} />
+            Edit Supplier
+          </Link>
+        </PermissionGate>
       </div>
 
       {/* Identity Card */}
-      <div className="rounded-2xl border border-[var(--border)] bg-white p-6">
+      <div className="rounded-2xl border border-[var(--border)] bg-white p-6 shadow-2xs">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
           <div
             className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl ${
@@ -118,253 +182,123 @@ export default async function SupplierViewPage({
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-xs">
-            <span className="rounded-lg bg-[var(--muted-background)] px-3 py-1.5 font-medium text-[var(--foreground)]">
-              Terms: {supplier.paymentTerms}
-            </span>
-            <span className="rounded-lg bg-[var(--muted-background)] px-3 py-1.5 font-medium text-[var(--foreground)]">
-              Facility: {supplier.city}, {supplier.state}
-            </span>
+            <div className="rounded-xl bg-[var(--muted-background)] px-3 py-2 text-center">
+              <p className="text-[10px] uppercase text-[var(--muted)]">Payment Terms</p>
+              <p className="font-semibold text-[var(--foreground)]">
+                {supplier.paymentTerms}
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-[var(--muted-background)] px-3 py-2 text-center">
+              <p className="text-[10px] uppercase text-[var(--muted)]">Opening Balance</p>
+              <p className="font-semibold text-[var(--primary)]">
+                ${Number(supplier.openingBalance || 0).toFixed(2)}
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Main Grid Details */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Left Column (2 spans) */}
-        <div className="space-y-6 lg:col-span-2">
-          {/* Supplier & Contact Info */}
-          <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-            <div className="mb-4 flex items-center gap-2.5 border-b border-[var(--border-light)] pb-3">
-              <Users size={18} className="text-[var(--primary)]" />
-              <h2 className="font-semibold">Supplier Information</h2>
+      {/* Details Grid */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Contact details */}
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-2xs space-y-4">
+          <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
+            <Mail size={16} className="text-[var(--primary)]" /> Contact Information
+          </h3>
+
+          <div className="space-y-3 text-sm">
+            <div>
+              <p className="text-xs text-[var(--muted)]">Primary Contact</p>
+              <p className="font-medium text-[var(--foreground)]">{supplier.contactPerson}</p>
             </div>
 
-            <div className="grid gap-5 sm:grid-cols-2">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                  Supplier Type
-                </p>
-                <p className="mt-1 text-sm font-medium">
-                  {isBusiness ? "Business / Corporation" : "Individual Artisan"}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                  Primary Contact Person
-                </p>
-                <p className="mt-1 text-sm font-medium">
-                  {supplier.contactPerson}
-                </p>
-              </div>
-
-              {isBusiness && (
-                <div className="sm:col-span-2">
-                  <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                    Company Name
-                  </p>
-                  <p className="mt-1 text-sm font-medium">
-                    {supplier.companyName}
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                  Email Address
-                </p>
-                {supplier.email ? (
-                  <a
-                    href={`mailto:${supplier.email}`}
-                    className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--primary)] hover:underline"
-                  >
-                    <Mail size={14} />
-                    {supplier.email}
-                  </a>
-                ) : (
-                  <p className="mt-1 text-sm text-[var(--muted)]">Not provided</p>
-                )}
-              </div>
-
-              <div>
-                <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                  Primary Phone
-                </p>
-                {supplier.phone ? (
-                  <a
-                    href={`tel:${supplier.phone}`}
-                    className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--foreground)] hover:text-[var(--primary)]"
-                  >
-                    <Phone size={14} />
-                    {supplier.phone}
-                  </a>
-                ) : (
-                  <p className="mt-1 text-sm text-[var(--muted)]">Not provided</p>
-                )}
-              </div>
-
-              <div>
-                <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                  Alternate Phone
-                </p>
-                <p className="mt-1 text-sm font-medium">
-                  {supplier.alternatePhone || "—"}
-                </p>
-              </div>
-
-              <div>
-                <p className="text-xs uppercase tracking-wide text-[var(--muted)]">
-                  Tax ID / EIN
-                </p>
-                <p className="mt-1 text-sm font-medium">
-                  {supplier.taxId || "—"}
-                </p>
-              </div>
+            <div>
+              <p className="text-xs text-[var(--muted)]">Email Address</p>
+              <p className="font-medium text-[var(--foreground)]">{supplier.email}</p>
             </div>
-          </section>
 
-          {/* Address Card */}
-          <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-            <div className="mb-4 flex items-center gap-2 border-b border-[var(--border-light)] pb-3">
-              <MapPin size={18} className="text-[var(--primary)]" />
-              <h2 className="font-semibold">Facility & Dispatch Address</h2>
+            <div>
+              <p className="text-xs text-[var(--muted)]">Phone Number</p>
+              <p className="font-medium text-[var(--foreground)]">{supplier.phone}</p>
             </div>
-            <div className="space-y-1 text-sm text-[var(--foreground)]">
-              <p className="font-medium">{supplier.addressLine1}</p>
-              {supplier.addressLine2 && <p>{supplier.addressLine2}</p>}
-              <p>
-                {supplier.city}, {supplier.state} {supplier.postalCode}
-              </p>
-              <p className="text-xs text-[var(--muted)]">{supplier.country}</p>
-            </div>
-          </section>
 
-          {/* Purchasing Notes */}
-          <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-            <div className="mb-3 flex items-center gap-2 border-b border-[var(--border-light)] pb-3">
-              <FileText size={18} className="text-[var(--primary)]" />
-              <h2 className="font-semibold">Purchasing Notes</h2>
-            </div>
-            {supplier.notes ? (
-              <p className="text-sm leading-relaxed text-[var(--foreground)]">
-                {supplier.notes}
-              </p>
-            ) : (
-              <p className="text-sm text-[var(--muted)]">
-                No purchasing notes recorded for this vendor.
-              </p>
+            {supplier.alternatePhone && (
+              <div>
+                <p className="text-xs text-[var(--muted)]">Alternate Phone</p>
+                <p className="font-medium text-[var(--foreground)]">{supplier.alternatePhone}</p>
+              </div>
             )}
-          </section>
 
-          {/* Purchase History Section */}
-          <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-            <div className="mb-4 flex items-center justify-between border-b border-[var(--border-light)] pb-3">
-              <div className="flex items-center gap-2">
-                <ShoppingCart size={18} className="text-[var(--primary)]" />
-                <h2 className="font-semibold">Purchase History</h2>
+            {supplier.taxId && (
+              <div>
+                <p className="text-xs text-[var(--muted)]">Tax ID / EIN</p>
+                <p className="font-medium font-mono text-[var(--foreground)]">{supplier.taxId}</p>
               </div>
-              <Link
-                href="/purchases/new"
-                className="text-xs font-medium text-[var(--primary)] hover:underline"
-              >
-                + New Purchase Order
-              </Link>
-            </div>
-
-            <div className="rounded-xl border border-dashed border-[var(--border)] p-6 text-center">
-              <ShoppingCart
-                size={28}
-                className="mx-auto mb-2 text-[var(--muted)]"
-              />
-              <p className="text-sm font-medium text-[var(--foreground)]">
-                Purchase Orders Linked to {displayName}
-              </p>
-              <p className="mt-1 text-xs text-[var(--muted)]">
-                Purchase orders created for this supplier will appear here with line items and status tracking.
-              </p>
-              <div className="mt-4">
-                <Link
-                  href="/purchases"
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-xs font-medium hover:bg-[var(--muted-background)]"
-                >
-                  View All Purchases
-                </Link>
-              </div>
-            </div>
-          </section>
-        </div>
-
-        {/* Right Column (1 span) */}
-        <div className="space-y-6">
-          {/* Payment & Account Terms */}
-          <section className="rounded-2xl border border-[var(--border)] bg-white p-6">
-            <div className="mb-4 flex items-center gap-2 border-b border-[var(--border-light)] pb-3">
-              <CreditCard size={18} className="text-[var(--primary)]" />
-              <h2 className="font-semibold">Payment Terms</h2>
-            </div>
-
-            <div className="space-y-4 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-[var(--muted)]">Payment Terms</span>
-                <span className="font-medium text-[var(--foreground)]">
-                  {supplier.paymentTerms}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-[var(--muted)]">Opening Balance</span>
-                <span className="font-semibold text-[var(--foreground)]">
-                  ${(supplier.openingBalance || 0).toLocaleString("en-US", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="text-[var(--muted)]">Status</span>
-                <span
-                  className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                    isActive
-                      ? "bg-emerald-50 text-[var(--success)]"
-                      : "bg-gray-100 text-[var(--muted)]"
-                  }`}
-                >
-                  {isActive ? "Active" : "Inactive"}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between border-t border-[var(--border-light)] pt-3">
-                <span className="inline-flex items-center gap-1.5 text-xs text-[var(--muted)]">
-                  <Calendar size={13} /> Registered
-                </span>
-                <span className="text-xs text-[var(--foreground)]">
-                  {formatDate(supplier.createdAt)}
-                </span>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1.5 text-xs text-[var(--muted)]">
-                  <Calendar size={13} /> Last Updated
-                </span>
-                <span className="text-xs text-[var(--foreground)]">
-                  {formatDate(supplier.updatedAt)}
-                </span>
-              </div>
-            </div>
-          </section>
-
-          {/* Quick Back */}
-          <div className="pt-2">
-            <Link
-              href="/suppliers"
-              className="inline-flex items-center gap-2 text-sm text-[var(--muted)] transition hover:text-[var(--foreground)]"
-            >
-              <ArrowLeft size={16} />
-              Back to Suppliers List
-            </Link>
+            )}
           </div>
         </div>
+
+        {/* Address details */}
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-2xs space-y-4">
+          <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
+            <MapPin size={16} className="text-[var(--primary)]" /> Facility & Mailing Address
+          </h3>
+
+          <div className="space-y-3 text-sm">
+            <div>
+              <p className="text-xs text-[var(--muted)]">Street Address</p>
+              <p className="font-medium text-[var(--foreground)]">{supplier.addressLine1}</p>
+              {supplier.addressLine2 && (
+                <p className="text-xs text-[var(--muted)]">{supplier.addressLine2}</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-xs text-[var(--muted)]">City</p>
+                <p className="font-medium text-[var(--foreground)]">{supplier.city}</p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--muted)]">State / Province</p>
+                <p className="font-medium text-[var(--foreground)]">{supplier.state}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-xs text-[var(--muted)]">Postal Code</p>
+                <p className="font-medium text-[var(--foreground)]">{supplier.postalCode}</p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--muted)]">Country</p>
+                <p className="font-medium text-[var(--foreground)]">{supplier.country}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Notes */}
+      {supplier.notes && (
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-2xs">
+          <h3 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
+            <FileText size={16} className="text-[var(--primary)]" /> Procurement Notes
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-[var(--foreground)]">
+            {supplier.notes}
+          </p>
+        </div>
+      )}
+
+      <div>
+        <Link
+          href="/suppliers"
+          className="inline-flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[var(--foreground)]"
+        >
+          <ArrowLeft size={16} />
+          Back to Suppliers
+        </Link>
       </div>
     </div>
   );

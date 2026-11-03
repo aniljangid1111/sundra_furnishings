@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Check,
@@ -19,13 +19,21 @@ import {
 } from "lucide-react";
 import {
   allModuleKeys,
-  initialRoles as seedRoles,
   standardModules,
 } from "@/features/roles/role.data";
 import { ModuleCRUD, UserRole } from "@/features/roles/role.types";
+import {
+  getRolesApi,
+  createRoleApi,
+  updateRoleApi,
+  deleteRoleApi,
+} from "@/lib/api/role.api";
+import { CountUp } from "@/components/ui/count-up";
+import { PermissionGate } from "@/lib/auth/permission-gate";
 
 export default function RolesManagementPage() {
-  const [roles, setRoles] = useState<UserRole[]>(seedRoles);
+  const [roles, setRoles] = useState<UserRole[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -36,11 +44,30 @@ export default function RolesManagementPage() {
   const [formPermissions, setFormPermissions] = useState<Record<string, ModuleCRUD>>({});
   const [inspectRole, setInspectRole] = useState<UserRole | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
+
+  const fetchRoles = async () => {
+    setIsLoading(true);
+    try {
+      const res = await getRolesApi();
+      if (res.success && res.data) {
+        setRoles(res.data);
+      }
+    } catch (err) {
+      console.error("Failed to load roles", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchRoles();
+  }, []);
 
   // KPIs
   const totalRoles = roles.length;
@@ -151,7 +178,7 @@ export default function RolesManagementPage() {
     setFormPermissions(updated);
   };
 
-  const handleSaveRole = (e: React.FormEvent) => {
+  const handleSaveRole = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
       alert("Role Name is required.");
@@ -161,53 +188,60 @@ export default function RolesManagementPage() {
     const code = formName.trim().toUpperCase().replace(/\s+/g, "_");
     const enabledModules = Object.keys(formPermissions).filter((k) => formPermissions[k]?.canView);
 
-    if (editingRole) {
-      setRoles((prev) =>
-        prev.map((r) =>
-          r.id === editingRole.id
-            ? {
-                ...r,
-                name: formName.trim(),
-                code,
-                description: formDesc.trim(),
-                status: formStatus,
-                modules: enabledModules,
-                permissions: formPermissions,
-                updatedAt: new Date().toISOString(),
-              }
-            : r
-        )
-      );
-      showToast(`Role "${formName.trim()}" updated successfully.`);
-    } else {
-      const newRole: UserRole = {
-        id: `role-${Date.now()}`,
+    setIsSubmitting(true);
+    try {
+      const payload = {
         name: formName.trim(),
         code,
-        description: formDesc.trim() || "Operational access profile.",
-        userCount: 0,
-        isSystem: false,
+        description: formDesc.trim() || undefined,
         status: formStatus,
         modules: enabledModules,
         permissions: formPermissions,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
       };
-      setRoles((prev) => [...prev, newRole]);
-      showToast(`New role "${formName.trim()}" created successfully.`);
-    }
 
-    setIsModalOpen(false);
+      if (editingRole) {
+        const res = await updateRoleApi(editingRole.id, payload);
+        if (res.success) {
+          showToast(`Role "${formName.trim()}" updated successfully.`);
+          fetchRoles();
+          setIsModalOpen(false);
+        } else {
+          alert(res.message || "Failed to update role");
+        }
+      } else {
+        const res = await createRoleApi(payload);
+        if (res.success) {
+          showToast(`New role "${formName.trim()}" created successfully.`);
+          fetchRoles();
+          setIsModalOpen(false);
+        } else {
+          alert(res.message || "Failed to create role");
+        }
+      }
+    } catch (err: any) {
+      alert(err?.message || "An error occurred while saving role");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleDeleteRole = (role: UserRole) => {
+  const handleDeleteRole = async (role: UserRole) => {
     if (role.isSystem) {
       alert("Administrator role cannot be deleted.");
       return;
     }
     if (confirm(`Are you sure you want to delete "${role.name}"?`)) {
-      setRoles((prev) => prev.filter((r) => r.id !== role.id));
-      showToast(`Role "${role.name}" has been deleted.`);
+      try {
+        const res = await deleteRoleApi(role.id);
+        if (res.success) {
+          showToast(`Role "${role.name}" has been deleted.`);
+          fetchRoles();
+        } else {
+          alert(res.message || "Failed to delete role");
+        }
+      } catch (err: any) {
+        alert(err?.message || "An error occurred while deleting role");
+      }
     }
   };
 
@@ -259,7 +293,9 @@ export default function RolesManagementPage() {
           <p className="mt-3 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
             TOTAL ROLES
           </p>
-          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{totalRoles}</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">
+            <CountUp value={totalRoles} isLoading={isLoading} />
+          </p>
           <p className="mt-0.5 text-xs text-[var(--muted)]">Defined</p>
         </div>
 
@@ -273,7 +309,9 @@ export default function RolesManagementPage() {
           <p className="mt-3 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
             ACTIVE ROLES
           </p>
-          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{activeRoles}</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">
+            <CountUp value={activeRoles} isLoading={isLoading} />
+          </p>
           <p className="mt-0.5 text-xs text-[var(--muted)]">Assignable</p>
         </div>
 
@@ -287,7 +325,9 @@ export default function RolesManagementPage() {
           <p className="mt-3 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
             USERS ASSIGNED
           </p>
-          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{usersAssigned}</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">
+            <CountUp value={usersAssigned} isLoading={isLoading} />
+          </p>
           <p className="mt-0.5 text-xs text-[var(--muted)]">Across all roles</p>
         </div>
 
@@ -301,7 +341,9 @@ export default function RolesManagementPage() {
           <p className="mt-3 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
             MODULES
           </p>
-          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{totalModulesCount}</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">
+            <CountUp value={totalModulesCount} isLoading={isLoading} />
+          </p>
           <p className="mt-0.5 text-xs text-[var(--muted)]">Governable</p>
         </div>
       </div>
@@ -315,10 +357,17 @@ export default function RolesManagementPage() {
 
       {/* Role Cards Grid (Matching Reference Image 3 & 4 with CRUD Tags) */}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {roles.map((role) => {
-          const col1Modules = standardModules.filter((m) => m.column === 1);
-          const col2Modules = standardModules.filter((m) => m.column === 2);
-          const enabledCount = role.modules.length;
+        {roles.length === 0 ? (
+          <div className="col-span-full rounded-2xl border border-dashed border-[var(--border)] bg-white p-12 text-center">
+            <Shield size={36} className="mx-auto text-[var(--muted)]/50" />
+            <p className="mt-3 text-base font-semibold text-[var(--foreground)]">No custom roles defined yet</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">Click &quot;Add Role&quot; above to define user privilege tiers.</p>
+          </div>
+        ) : (
+          roles.map((role) => {
+            const col1Modules = standardModules.filter((m) => m.column === 1);
+            const col2Modules = standardModules.filter((m) => m.column === 2);
+            const enabledCount = role.modules.length;
 
           return (
             <div
@@ -521,7 +570,8 @@ export default function RolesManagementPage() {
               </div>
             </div>
           );
-        })}
+        })
+        )}
       </div>
 
       {/* Inspect CRUD Matrix Modal */}

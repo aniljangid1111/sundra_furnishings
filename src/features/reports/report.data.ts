@@ -91,7 +91,10 @@ export function getInventoryValuationReport(): InventoryValuationEntry[] {
       productId: prod.id,
       productName: prod.name,
       sku: prod.sku,
-      category: prod.category,
+      category:
+        typeof prod.category === "object" && prod.category
+          ? prod.category.name
+          : prod.category || "Unassigned",
       onHand,
       unitCost: prod.costPrice,
       totalValuation,

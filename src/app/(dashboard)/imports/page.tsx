@@ -1,46 +1,95 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
-  AlertCircle,
-  Building2,
-  Calendar,
-  CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Eye,
-  FileSpreadsheet,
   FileText,
-  Filter,
   Plus,
   Search,
-  Ship,
-  Warehouse,
+  Trash2,
 } from "lucide-react";
-import { initialImports } from "@/features/imports/import.data";
+import {
+  getImportsApi,
+  deleteImportApi,
+  type ImportKPI,
+} from "@/lib/api/import.api";
 import type { ImportShipment, ImportStatus } from "@/features/imports/import.types";
+import { CountUp } from "@/components/ui/count-up";
+import { PermissionGate } from "@/lib/auth/permission-gate";
 
 export default function ImportsListingPage() {
-  const [imports, setImports] = useState<ImportShipment[]>(initialImports);
+  const [imports, setImports] = useState<ImportShipment[]>([]);
+  const [kpi, setKpi] = useState<ImportKPI | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Filters & Pagination
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
-
-  // Summary Metrics calculated dynamically
-  const totalShipments = imports.length;
-  const totalProductCost = imports.reduce((sum, imp) => sum + imp.totalProductCost, 0);
-  const totalAdditionalCosts = imports.reduce((sum, imp) => sum + imp.totalAdditionalCosts, 0);
-  const totalLandedCost = imports.reduce((sum, imp) => sum + imp.totalLandedCost, 0);
-
-  const filteredImports = imports.filter((imp) => {
-    const matchesSearch =
-      imp.importNumber.toLowerCase().includes(search.toLowerCase()) ||
-      (imp.supplierName && imp.supplierName.toLowerCase().includes(search.toLowerCase())) ||
-      (imp.supplierInvoiceNumber && imp.supplierInvoiceNumber.toLowerCase().includes(search.toLowerCase())) ||
-      (imp.shipmentReference && imp.shipmentReference.toLowerCase().includes(search.toLowerCase()));
-
-    const matchesStatus = statusFilter === "ALL" || imp.status === statusFilter;
-    return matchesSearch && matchesStatus;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    limit: 10,
+    totalItems: 0,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
   });
+
+  const fetchImports = async (page = 1) => {
+    setIsLoading(true);
+    try {
+      const res = await getImportsApi({
+        status: statusFilter !== "ALL" ? statusFilter : undefined,
+        search: search.trim() || undefined,
+        page,
+        limit: 10,
+      });
+
+      if (res.success && res.data) {
+        setImports(res.data);
+        if (res.kpi) setKpi(res.kpi);
+        if (res.pagination) setPagination(res.pagination);
+      } else {
+        setImports([]);
+      }
+    } catch (err) {
+      console.error("Failed to load imports:", err);
+      setImports([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchImports(currentPage);
+  }, [statusFilter, currentPage]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentPage(1);
+      fetchImports(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const handleDelete = async (id: number, importNum: string) => {
+    if (confirm(`Are you sure you want to delete shipment ${importNum}?`)) {
+      try {
+        const res = await deleteImportApi(id);
+        if (res.success) {
+          fetchImports(currentPage);
+        } else {
+          alert(res.message || "Failed to delete import shipment");
+        }
+      } catch (err: any) {
+        alert(err?.message || "Error deleting shipment");
+      }
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -58,41 +107,48 @@ export default function ImportsListingPage() {
           </p>
         </div>
 
-        <Link
-          href="/imports/new"
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
-        >
-          <Plus size={17} strokeWidth={2} />
-          <span>New Import Shipment</span>
-        </Link>
+        <PermissionGate module="imports" action="create">
+          <Link
+            href="/imports/new"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
+          >
+            <Plus size={17} strokeWidth={2} />
+            <span>New Import Shipment</span>
+          </Link>
+        </PermissionGate>
       </div>
 
       {/* KPI Cards */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label="Total Shipments"
-          value={String(totalShipments)}
+          value={kpi?.totalImports ?? 0}
+          isLoading={isLoading}
           description="Active freight imports"
           badge="Shipments"
         />
         <SummaryCard
-          label="Goods Purchase Cost"
-          value={`$${totalProductCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-          description="Base FOB value"
-          badge="FOB Base"
-          badgeColor="text-blue-700 bg-blue-50"
+          label="Completed Imports"
+          value={kpi?.completedCount ?? 0}
+          isLoading={isLoading}
+          description="Landed & capitalized"
+          badge="Completed"
+          badgeColor="text-emerald-700 bg-emerald-50"
         />
         <SummaryCard
-          label="Freight & Customs"
-          value={`$${totalAdditionalCosts.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-          description="Landed additions"
-          badge="Logistics"
+          label="In-Transit / Processing"
+          value={kpi?.processingCount ?? 0}
+          isLoading={isLoading}
+          description="En-route or at port"
+          badge="Processing"
           badgeColor="text-amber-700 bg-amber-50"
         />
         <SummaryCard
           label="Total Landed Valuation"
-          value={`$${totalLandedCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-          description="Capitalized into inventory"
+          value={kpi?.totalLandedCost ?? 0}
+          isCurrency
+          isLoading={isLoading}
+          description="Capitalized landed costs"
           badge="Valuation"
           badgeColor="text-emerald-700 bg-emerald-50"
         />
@@ -113,7 +169,7 @@ export default function ImportsListingPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by import #, supplier, invoice, or BOL ref..."
-              className="h-10 w-full rounded-xl border border-[var(--border)]  pl-9 pr-3 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--primary)] focus:bg-white"
+              className="h-10 w-full rounded-xl border border-[var(--border)] pl-9 pr-3 text-sm text-[var(--foreground)] outline-none transition placeholder:text-[var(--muted)] focus:border-[var(--primary)] focus:bg-white"
             />
           </div>
 
@@ -121,7 +177,10 @@ export default function ImportsListingPage() {
             <div className="relative">
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="h-10 appearance-none rounded-xl border border-[var(--border)] bg-white pl-3 pr-8 text-xs font-medium text-[var(--foreground)] outline-none transition focus:border-[var(--primary)]"
               >
                 <option value="ALL">All Statuses</option>
@@ -157,8 +216,14 @@ export default function ImportsListingPage() {
             </thead>
 
             <tbody>
-              {filteredImports.length > 0 ? (
-                filteredImports.map((imp) => (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={9} className="px-5 py-12 text-center text-sm text-[var(--muted)]">
+                    Loading import shipments...
+                  </td>
+                </tr>
+              ) : imports.length > 0 ? (
+                imports.map((imp) => (
                   <tr
                     key={imp.id}
                     className="border-b border-[var(--border-light)] last:border-0 hover:bg-[var(--muted-background)]/50 transition-colors"
@@ -188,24 +253,24 @@ export default function ImportsListingPage() {
 
                     <td className="px-4 py-4 text-xs">
                       <p className="font-medium text-[var(--foreground)]">{imp.importDate}</p>
-                      <p className="text-[var(--muted)]">{imp.warehouseName.split("(")[0]}</p>
+                      <p className="text-[var(--muted)]">{(imp.warehouseName || "Main Warehouse").split("(")[0]}</p>
                     </td>
 
                     <td className="px-4 py-4 text-right text-xs font-medium text-[var(--foreground)]">
-                      {imp.items.reduce((sum, item) => sum + item.quantity, 0)} units
-                      <span className="block text-[11px] text-[var(--muted)]">{imp.items.length} SKUs</span>
+                      {(imp.items || []).reduce((sum, item) => sum + item.quantity, 0)} units
+                      <span className="block text-[11px] text-[var(--muted)]">{(imp.items || []).length} SKUs</span>
                     </td>
 
                     <td className="px-4 py-4 text-right text-xs font-mono font-medium text-slate-700">
-                      ${imp.totalProductCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      ${Number(imp.totalProductCost || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                     </td>
 
                     <td className="px-4 py-4 text-right text-xs font-mono font-semibold text-amber-700">
-                      +${imp.totalAdditionalCosts.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      +${Number(imp.totalAdditionalCosts || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                     </td>
 
                     <td className="px-4 py-4 text-right font-mono font-bold text-emerald-800">
-                      ${imp.totalLandedCost.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                      ${Number(imp.totalLandedCost || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                     </td>
 
                     <td className="px-4 py-4 text-center">
@@ -222,14 +287,26 @@ export default function ImportsListingPage() {
                           <Eye size={15} />
                         </Link>
                         {imp.status !== "COMPLETED" && (
-                          <Link
-                            href={`/imports/edit/${imp.id}`}
-                            title="Edit shipment & expenses"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--primary)] hover:bg-white hover:text-[var(--primary)] text-xs font-medium"
-                          >
-                            Edit
-                          </Link>
+                          <PermissionGate module="imports" action="edit">
+                            <Link
+                              href={`/imports/edit/${imp.id}`}
+                              title="Edit shipment & expenses"
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--primary)] hover:bg-white hover:text-[var(--primary)] text-xs font-medium"
+                            >
+                              Edit
+                            </Link>
+                          </PermissionGate>
                         )}
+                        <PermissionGate module="imports" action="delete">
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(imp.id, imp.importNumber)}
+                            title="Delete shipment"
+                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--muted)] transition hover:border-rose-500 hover:bg-white hover:text-rose-600"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </PermissionGate>
                       </div>
                     </td>
                   </tr>
@@ -246,10 +323,33 @@ export default function ImportsListingPage() {
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="flex flex-col gap-2 border-t border-[var(--border-light)] px-5 py-3 text-xs text-[var(--muted)] sm:flex-row sm:items-center sm:justify-between">
-          <span>Showing {filteredImports.length} of {imports.length} shipments</span>
-          <span>Inventory Capitalization & Cost Allocation System</span>
+        {/* Dynamic Pagination Footer */}
+        <div className="flex flex-col items-center justify-between gap-3 border-t border-[var(--border-light)] px-5 py-3 sm:flex-row">
+          <p className="text-xs text-[var(--muted)]">
+            Showing {imports.length} of {pagination.totalItems} shipments (Page {pagination.currentPage} of {pagination.totalPages || 1})
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!pagination.hasPrevPage || isLoading}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)] disabled:opacity-40"
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <span className="text-xs font-medium px-1 text-[var(--muted)]">
+              {pagination.currentPage} / {pagination.totalPages || 1}
+            </span>
+            <button
+              type="button"
+              disabled={!pagination.hasNextPage || isLoading}
+              onClick={() => setCurrentPage((p) => p + 1)}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)] disabled:opacity-40"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       </section>
     </div>
@@ -259,12 +359,16 @@ export default function ImportsListingPage() {
 function SummaryCard({
   label,
   value,
+  isCurrency = false,
+  isLoading = false,
   description,
   badge,
   badgeColor = "text-[var(--primary)] bg-[var(--primary-light)]",
 }: {
   label: string;
-  value: string;
+  value: number;
+  isCurrency?: boolean;
+  isLoading?: boolean;
   description: string;
   badge: string;
   badgeColor?: string;
@@ -275,7 +379,14 @@ function SummaryCard({
         <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted)]">{label}</p>
         <span className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${badgeColor}`}>{badge}</span>
       </div>
-      <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--foreground)]">{value}</p>
+      <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--foreground)]">
+        <CountUp
+          value={value}
+          prefix={isCurrency ? "$" : ""}
+          decimals={isCurrency ? 2 : 0}
+          isLoading={isLoading}
+        />
+      </p>
       <p className="mt-1 text-xs text-[var(--muted)]">{description}</p>
     </div>
   );

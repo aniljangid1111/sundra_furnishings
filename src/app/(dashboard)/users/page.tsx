@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Edit2,
   Eye,
   EyeOff,
@@ -24,21 +26,43 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { initialRoles, standardModules } from "@/features/roles/role.data";
-import { initialUsers as seedUsers } from "@/features/users/user.data";
+import { standardModules } from "@/features/roles/role.data";
 import { UserAccount } from "@/features/users/user.types";
 import { UserRole } from "@/features/roles/role.types";
+import {
+  getUsersApi,
+  createUserApi,
+  updateUserApi,
+  resetUserPasswordApi,
+  deleteUserApi,
+  type UserKPI,
+} from "@/lib/api/user.api";
+import { getRolesApi } from "@/lib/api/role.api";
+import { CountUp } from "@/components/ui/count-up";
+import { PermissionGate } from "@/lib/auth/permission-gate";
 
 export default function UserManagementPage() {
-  const [users, setUsers] = useState<UserAccount[]>(seedUsers);
-  const [roles, setRoles] = useState<UserRole[]>(initialRoles);
+  const [users, setUsers] = useState<UserAccount[]>([]);
+  const [roles, setRoles] = useState<UserRole[]>([]);
+  const [kpi, setKpi] = useState<UserKPI | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    limit: 10,
+    totalItems: 0,
+    totalPages: 1,
+    hasNextPage: false,
+    hasPrevPage: false,
+  });
 
   // Modals State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
   const [viewingUserAccess, setViewingUserAccess] = useState<UserAccount | null>(null);
   const [passwordResetUser, setPasswordResetUser] = useState<UserAccount | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Add / Edit Form State
   const [formName, setFormName] = useState("");
@@ -46,7 +70,7 @@ export default function UserManagementPage() {
   const [formEmail, setFormEmail] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [formRoleId, setFormRoleId] = useState(roles[0]?.id || "");
+  const [formRoleId, setFormRoleId] = useState("");
   const [formStatus, setFormStatus] = useState<"ACTIVE" | "INACTIVE">("ACTIVE");
 
   // Reset Password Modal State
@@ -62,25 +86,43 @@ export default function UserManagementPage() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // KPIs
-  const totalUsers = users.length;
-  const activeUsers = users.filter((u) => u.status === "ACTIVE").length;
-  const inactiveUsers = users.filter((u) => u.status === "INACTIVE").length;
-  const rolesInUseCount = new Set(users.map((u) => u.roleId)).size;
+  const fetchUsers = async (page = 1) => {
+    setIsLoading(true);
+    try {
+      const [uRes, rRes] = await Promise.all([
+        getUsersApi({ search: search.trim() || undefined, page, limit: 10 }),
+        getRolesApi(),
+      ]);
 
-  // Filtered Users
-  const filteredUsers = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return users;
-    return users.filter((u) => {
-      return (
-        u.name.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q) ||
-        u.mobile.toLowerCase().includes(q) ||
-        u.role.toLowerCase().includes(q)
-      );
-    });
-  }, [users, search]);
+      if (uRes.success && uRes.data) {
+        setUsers(uRes.data);
+        if (uRes.kpi) setKpi(uRes.kpi);
+        if (uRes.pagination) setPagination(uRes.pagination);
+      }
+      if (rRes.success && rRes.data) {
+        setRoles(rRes.data);
+        if (!formRoleId && rRes.data[0]) {
+          setFormRoleId(rRes.data[0].id);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load users", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers(currentPage);
+  }, [currentPage]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCurrentPage(1);
+      fetchUsers(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const generateRandomPassword = () => {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%";
@@ -124,7 +166,7 @@ export default function UserManagementPage() {
     setRequireChangeOnLogin(true);
   };
 
-  const handleSaveResetPassword = (e: React.FormEvent) => {
+  const handleSaveResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!passwordResetUser) return;
 
@@ -137,43 +179,62 @@ export default function UserManagementPage() {
       return;
     }
 
-    setUsers((prev) =>
-      prev.map((u) =>
-        u.id === passwordResetUser.id
-          ? {
-              ...u,
-              password: newPassword,
-              requirePasswordChange: requireChangeOnLogin,
-            }
-          : u
-      )
-    );
-
-    showToast(`Password successfully reset for "${passwordResetUser.name}".`);
-    setPasswordResetUser(null);
-  };
-
-  const handleToggleStatus = (id: string) => {
-    setUsers((prev) =>
-      prev.map((u) => {
-        if (u.id === id) {
-          const next = u.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
-          showToast(`User "${u.name}" status changed to ${next.toLowerCase()}.`);
-          return { ...u, status: next };
-        }
-        return u;
-      })
-    );
-  };
-
-  const handleDeleteUser = (u: UserAccount) => {
-    if (confirm(`Are you sure you want to delete user "${u.name}"?`)) {
-      setUsers((prev) => prev.filter((user) => user.id !== u.id));
-      showToast(`User "${u.name}" deleted.`);
+    setIsSubmitting(true);
+    try {
+      const res = await resetUserPasswordApi(
+        passwordResetUser.id,
+        newPassword,
+        requireChangeOnLogin
+      );
+      if (res.success) {
+        showToast(`Password successfully reset for "${passwordResetUser.name}".`);
+        setPasswordResetUser(null);
+        fetchUsers(currentPage);
+      } else {
+        alert(res.message || "Failed to reset password");
+      }
+    } catch (err: any) {
+      alert(err?.message || "An error occurred while resetting password");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleSaveUser = (e: React.FormEvent) => {
+  const handleToggleStatus = async (id: string) => {
+    const target = users.find((u) => u.id === id);
+    if (!target) return;
+    const nextStatus = target.status === "ACTIVE" ? "INACTIVE" : "ACTIVE";
+
+    try {
+      const res = await updateUserApi(id, { status: nextStatus });
+      if (res.success) {
+        showToast(`User "${target.name}" status changed to ${nextStatus.toLowerCase()}.`);
+        fetchUsers(currentPage);
+      } else {
+        alert(res.message || "Failed to update user status");
+      }
+    } catch (err: any) {
+      alert(err?.message || "Error updating user status");
+    }
+  };
+
+  const handleDeleteUser = async (u: UserAccount) => {
+    if (confirm(`Are you sure you want to delete user "${u.name}"?`)) {
+      try {
+        const res = await deleteUserApi(u.id);
+        if (res.success) {
+          showToast(`User "${u.name}" deleted.`);
+          fetchUsers(currentPage);
+        } else {
+          alert(res.message || "Failed to delete user");
+        }
+      } catch (err: any) {
+        alert(err?.message || "Error deleting user");
+      }
+    }
+  };
+
+  const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim() || !formEmail.trim()) {
       alert("Name and Email are required for login credentials.");
@@ -182,55 +243,60 @@ export default function UserManagementPage() {
 
     const selectedRole = roles.find((r) => r.id === formRoleId) || roles[0];
 
-    if (editingUser) {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === editingUser.id
-            ? {
-                ...u,
-                name: formName.trim(),
-                mobile: formMobile.trim(),
-                email: formEmail.trim(),
-                role: selectedRole.name,
-                roleId: selectedRole.id,
-                status: formStatus,
-                ...(formPassword ? { password: formPassword } : {}),
-              }
-            : u
-        )
-      );
-      showToast(`User "${formName.trim()}" updated.`);
-    } else {
-      const initials = formName
-        .trim()
-        .split(" ")
-        .map((p) => p[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2);
-
-      const newUser: UserAccount = {
-        id: `u-${Date.now()}`,
-        name: formName.trim(),
-        mobile: formMobile.trim() || "+1 (704) 555-0100",
-        email: formEmail.trim(),
-        role: selectedRole.name,
-        roleId: selectedRole.id,
-        status: formStatus,
-        initials: initials || "SF",
-        avatarBg: "bg-emerald-700 text-white",
-        password: formPassword.trim() || "Sundara@2026!",
-      };
-
-      setUsers((prev) => [...prev, newUser]);
-      showToast(`User "${formName.trim()}" created successfully.`);
+    setIsSubmitting(true);
+    try {
+      if (editingUser) {
+        const payload = {
+          name: formName.trim(),
+          mobile: formMobile.trim(),
+          email: formEmail.trim(),
+          role: selectedRole?.name,
+          roleId: selectedRole?.id,
+          status: formStatus,
+        };
+        const res = await updateUserApi(editingUser.id, payload);
+        if (res.success) {
+          showToast(`User "${formName.trim()}" updated.`);
+          setIsModalOpen(false);
+          fetchUsers(currentPage);
+        } else {
+          alert(res.message || "Failed to update user");
+        }
+      } else {
+        const payload = {
+          name: formName.trim(),
+          mobile: formMobile.trim() || "+1 (704) 555-0100",
+          email: formEmail.trim(),
+          password: formPassword.trim() || "Sundara@2026!",
+          role: selectedRole?.name,
+          roleId: selectedRole?.id || "role-employee",
+          status: formStatus,
+          avatarBg: "bg-emerald-700 text-white",
+        };
+        const res = await createUserApi(payload);
+        if (res.success) {
+          showToast(`User "${formName.trim()}" created successfully.`);
+          setIsModalOpen(false);
+          fetchUsers(currentPage);
+        } else {
+          alert(res.message || "Failed to create user");
+        }
+      }
+    } catch (err: any) {
+      alert(err?.message || "Error saving user account");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsModalOpen(false);
   };
 
   const selectedRoleDetails = roles.find((r) => r.id === formRoleId);
   const viewingUserRole = viewingUserAccess ? roles.find((r) => r.id === viewingUserAccess.roleId) : null;
+
+  // KPIs
+  const totalUsers = kpi?.totalUsers ?? users.length;
+  const activeUsers = kpi?.activeUsers ?? users.filter((u) => u.status === "ACTIVE").length;
+  const inactiveUsers = kpi?.inactiveUsers ?? users.filter((u) => u.status === "INACTIVE").length;
+  const rolesInUseCount = new Set(users.map((u) => u.roleId)).size;
 
   return (
     <div className="space-y-6">
@@ -290,7 +356,9 @@ export default function UserManagementPage() {
           <p className="mt-3 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
             TOTAL USERS
           </p>
-          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{totalUsers}</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">
+            <CountUp value={totalUsers} isLoading={isLoading} />
+          </p>
           <p className="mt-0.5 text-xs text-[var(--muted)]">Registered staff</p>
         </div>
 
@@ -304,7 +372,9 @@ export default function UserManagementPage() {
           <p className="mt-3 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
             ACTIVE USERS
           </p>
-          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{activeUsers}</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">
+            <CountUp value={activeUsers} isLoading={isLoading} />
+          </p>
           <p className="mt-0.5 text-xs text-[var(--muted)]">Operational accounts</p>
         </div>
 
@@ -318,7 +388,9 @@ export default function UserManagementPage() {
           <p className="mt-3 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
             INACTIVE USERS
           </p>
-          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{inactiveUsers}</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">
+            <CountUp value={inactiveUsers} isLoading={isLoading} />
+          </p>
           <p className="mt-0.5 text-xs text-[var(--muted)]">Access paused</p>
         </div>
 
@@ -332,7 +404,9 @@ export default function UserManagementPage() {
           <p className="mt-3 text-[11px] font-bold uppercase tracking-wider text-[var(--muted)]">
             ROLES IN USE
           </p>
-          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">{rolesInUseCount}</p>
+          <p className="mt-1 text-2xl font-bold text-[var(--foreground)]">
+            <CountUp value={rolesInUseCount} isLoading={isLoading} />
+          </p>
           <p className="mt-0.5 text-xs text-[var(--muted)]">Permission tiers</p>
         </div>
       </div>
@@ -370,120 +444,126 @@ export default function UserManagementPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border-light)]">
-              {filteredUsers.map((user) => {
-                const userRole = roles.find((r) => r.id === user.roleId);
-                const enabledCount = userRole?.modules.length || 0;
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="p-10 text-center text-xs text-[var(--muted)]">
+                    Loading users...
+                  </td>
+                </tr>
+              ) : users.length > 0 ? (
+                users.map((user) => {
+                  const userRole = roles.find((r) => r.id === user.roleId);
+                  const enabledCount = userRole?.modules.length || 0;
 
-                return (
-                  <tr
-                    key={user.id}
-                    className="transition hover:bg-[var(--muted-background)]/30"
-                  >
-                    {/* USER: Avatar + Full Name */}
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-700 font-bold text-xs text-white">
-                          {user.initials}
+                  return (
+                    <tr
+                      key={user.id}
+                      className="transition hover:bg-[var(--muted-background)]/30"
+                    >
+                      {/* USER: Avatar + Full Name */}
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-700 font-bold text-xs text-white">
+                            {user.initials}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-slate-800 text-xs">{user.name}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-semibold text-slate-800 text-xs">{user.name}</p>
-                        </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* MOBILE */}
-                    <td className="px-5 py-3.5 text-slate-700 font-normal">
-                      {user.mobile}
-                    </td>
+                      {/* MOBILE */}
+                      <td className="px-5 py-3.5 text-slate-700 font-normal">
+                        {user.mobile}
+                      </td>
 
-                    {/* EMAIL */}
-                    <td className="px-5 py-3.5 text-slate-600 font-normal">
-                      {user.email}
-                    </td>
+                      {/* EMAIL */}
+                      <td className="px-5 py-3.5 text-slate-600 font-normal">
+                        {user.email}
+                      </td>
 
-                    {/* ROLE */}
-                    <td className="px-5 py-3.5">
-                      <button
-                        type="button"
-                        onClick={() => setViewingUserAccess(user)}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:border-[var(--primary)] hover:bg-emerald-50/40"
-                        title="Click to view module access & CRUD rights"
-                      >
-                        <Shield size={13} className="text-slate-500 shrink-0" />
-                        <span>{user.role}</span>
-                        <span className="text-2xs text-[var(--muted)] font-mono">
-                          ({enabledCount} mods)
-                        </span>
-                      </button>
-                    </td>
-
-                    {/* STATUS */}
-                    <td className="px-5 py-3.5">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleStatus(user.id)}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
-                          user.status === "ACTIVE"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                            : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200"
-                        }`}
-                        title="Click to toggle status"
-                      >
-                        <span
-                          className={`h-1.5 w-1.5 rounded-full ${
-                            user.status === "ACTIVE" ? "bg-emerald-700" : "bg-slate-400"
-                          }`}
-                        />
-                        <span>{user.status === "ACTIVE" ? "Active" : "Inactive"}</span>
-                      </button>
-                    </td>
-
-                    {/* ACTIONS: Reset Password + View + Edit + Delete */}
-                    <td className="px-5 py-3.5 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        {/* Admin Direct Password Reset Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenResetPassword(user)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-amber-600 transition hover:bg-amber-50 hover:text-amber-800"
-                          title="Admin Direct Password Reset (No current password needed)"
-                        >
-                          <KeyRound size={14} />
-                        </button>
-
+                      {/* ROLE */}
+                      <td className="px-5 py-3.5">
                         <button
                           type="button"
                           onClick={() => setViewingUserAccess(user)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-[var(--primary)]"
-                          title="View Permissions Matrix"
+                          className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:border-[var(--primary)] hover:bg-emerald-50/40"
+                          title="Click to view module access & CRUD rights"
                         >
-                          <Eye size={14} />
+                          <Shield size={13} className="text-slate-500 shrink-0" />
+                          <span>{user.role}</span>
+                          <span className="text-2xs text-[var(--muted)] font-mono">
+                            ({enabledCount} mods)
+                          </span>
                         </button>
+                      </td>
 
+                      {/* STATUS */}
+                      <td className="px-5 py-3.5">
                         <button
                           type="button"
-                          onClick={() => handleOpenEditModal(user)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
-                          title="Edit User Details"
+                          onClick={() => handleToggleStatus(user.id)}
+                          className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+                            user.status === "ACTIVE"
+                              ? "border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                              : "border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                          title="Click to toggle status"
                         >
-                          <Edit2 size={14} />
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              user.status === "ACTIVE" ? "bg-emerald-700" : "bg-slate-400"
+                            }`}
+                          />
+                          <span>{user.status === "ACTIVE" ? "Active" : "Inactive"}</span>
                         </button>
+                      </td>
 
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteUser(user)}
-                          className="flex h-7 w-7 items-center justify-center rounded-lg text-rose-500 transition hover:bg-rose-50 hover:text-rose-700"
-                          title="Delete User"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                      {/* ACTIONS: Reset Password + View + Edit + Delete */}
+                      <td className="px-5 py-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Admin Direct Password Reset Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenResetPassword(user)}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg text-amber-600 transition hover:bg-amber-50 hover:text-amber-800"
+                            title="Admin Direct Password Reset (No current password needed)"
+                          >
+                            <KeyRound size={14} />
+                          </button>
 
-              {filteredUsers.length === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setViewingUserAccess(user)}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-[var(--primary)]"
+                            title="View Permissions Matrix"
+                          >
+                            <Eye size={14} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(user)}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-800"
+                            title="Edit User Details"
+                          >
+                            <Edit2 size={14} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(user)}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg text-rose-500 transition hover:bg-rose-50 hover:text-rose-700"
+                            title="Delete User"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
                 <tr>
                   <td colSpan={6} className="p-10 text-center text-xs text-[var(--muted)]">
                     No users match "{search}".
@@ -492,6 +572,35 @@ export default function UserManagementPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Dynamic Pagination Footer */}
+        <div className="flex flex-col items-center justify-between gap-3 border-t border-[var(--border-light)] px-5 py-3 sm:flex-row">
+          <p className="text-xs text-[var(--muted)]">
+            Showing {users.length} of {pagination.totalItems} users (Page {pagination.currentPage} of {pagination.totalPages || 1})
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={!pagination.hasPrevPage || isLoading}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)] disabled:opacity-40"
+            >
+              <ChevronLeft size={14} /> Previous
+            </button>
+            <span className="text-xs font-medium px-1 text-[var(--muted)]">
+              {pagination.currentPage} / {pagination.totalPages || 1}
+            </span>
+            <button
+              type="button"
+              disabled={!pagination.hasNextPage || isLoading}
+              onClick={() => setCurrentPage((p) => p + 1)}
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)] disabled:opacity-40"
+            >
+              Next <ChevronRight size={14} />
+            </button>
+          </div>
         </div>
       </section>
 

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   Building2,
@@ -17,9 +18,13 @@ import {
   User,
   Warehouse as WarehouseIcon,
 } from "lucide-react";
-import { products } from "@/features/products/product.data";
-import { salesChannels } from "@/features/sales-channels/sales-channel.data";
-import { warehouses } from "@/features/warehouses/warehouse.data";
+import { getProductsApi } from "@/lib/api/product.api";
+import type { Product } from "@/features/products/product.types";
+import { getSalesChannelsApi } from "@/lib/api/salesChannel.api";
+import type { SalesChannel } from "@/features/sales-channels/sales-channel.types";
+import { getWarehousesApi } from "@/lib/api/warehouse.api";
+import type { Warehouse } from "@/features/warehouses/warehouse.types";
+import { createInvoiceApi, updateInvoiceApi } from "@/lib/api/invoice.api";
 import { getDefaultTaxRate } from "@/features/settings/tax-settings.data";
 import type {
   Invoice,
@@ -35,7 +40,57 @@ interface InvoiceFormProps {
 }
 
 export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
+  const router = useRouter();
   const isEdit = mode === "edit";
+
+  // Dynamic dropdown lists
+  const [productsList, setProductsList] = useState<Product[]>([]);
+  const [salesChannelsList, setSalesChannelsList] = useState<SalesChannel[]>([]);
+  const [warehousesList, setWarehousesList] = useState<Warehouse[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Line items (Initialized from invoice if editing, otherwise empty until catalog loads)
+  const [items, setItems] = useState<InvoiceLineItem[]>(invoice?.items ?? []);
+
+  useEffect(() => {
+    async function loadAuxData() {
+      try {
+        const [prodRes, chanRes, whRes] = await Promise.all([
+          getProductsApi({ limit: 100 }),
+          getSalesChannelsApi({ limit: 100 }),
+          getWarehousesApi({ limit: 100 }),
+        ]);
+        if (prodRes.success && prodRes.data) {
+          setProductsList(prodRes.data);
+          // If creating a new invoice, initialize the first row with the real product's exact catalog selling price
+          if (!invoice && prodRes.data.length > 0) {
+            const first = prodRes.data[0];
+            const defaultTax = typeof window !== "undefined" ? getDefaultTaxRate() : 8.25;
+            const actualPrice = Number(first.sellingPrice || 0);
+            const actualTax = Number(first.taxRate ?? defaultTax);
+            setItems([
+              {
+                id: Date.now(),
+                productId: first.id,
+                sku: first.sku,
+                productName: first.name,
+                quantity: 1,
+                unitPrice: actualPrice,
+                discount: 0,
+                taxRate: actualTax,
+                lineTotal: Math.round(actualPrice * (1 + actualTax / 100) * 100) / 100,
+              },
+            ]);
+          }
+        }
+        if (chanRes.success && chanRes.data) setSalesChannelsList(chanRes.data);
+        if (whRes.success && whRes.data) setWarehousesList(whRes.data);
+      } catch (err) {
+        console.error("Failed to load invoice form dependencies", err);
+      }
+    }
+    loadAuxData();
+  }, []);
 
   const [invoiceNumber, setInvoiceNumber] = useState(
     invoice?.invoiceNumber ??
@@ -44,7 +99,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
   const [salesChannelId, setSalesChannelId] = useState<number>(
     invoice?.salesChannelId ?? 1,
   );
-  const activeChannel = salesChannels.find(
+  const activeChannel = salesChannelsList.find(
     (c) => c.id === Number(salesChannelId),
   );
   const [externalOrderId, setExternalOrderId] = useState(
@@ -72,7 +127,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
 
   // Warehouse selection
   const [warehouseId, setWarehouseId] = useState<number>(
-    invoice?.warehouseId ?? (warehouses[0]?.id || 1),
+    invoice?.warehouseId ?? (warehousesList[0]?.id || 1),
   );
 
   // Status & payment
@@ -98,29 +153,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
   );
   const [notes, setNotes] = useState(invoice?.notes ?? "");
 
-  const initialTax = typeof window !== "undefined" ? getDefaultTaxRate() : 18;
-
-  // Line items
-  const [items, setItems] = useState<InvoiceLineItem[]>(
-    invoice?.items ?? [
-      {
-        id: 1,
-        productId: products[1]?.id || 2,
-        sku: products[1]?.sku || "CHR-001",
-        productName: products[1]?.name || "Luna Accent Chair",
-        quantity: 1,
-        unitPrice: products[1]?.sellingPrice || 420,
-        discount: 0,
-        taxRate: products[1]?.taxRate || initialTax,
-        lineTotal:
-          Math.round(
-            (products[1]?.sellingPrice || 420) *
-              (1 + (products[1]?.taxRate || initialTax) / 100) *
-              100
-          ) / 100,
-      },
-    ],
-  );
+  const initialTax = typeof window !== "undefined" ? getDefaultTaxRate() : 8.25;
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [feedbackMessage, setFeedbackMessage] = useState("");
@@ -137,26 +170,29 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
   };
 
   const handleProductSelect = (index: number, pId: number) => {
-    const selectedProd = products.find((p) => p.id === pId);
+    const selectedProd = productsList.find((p) => p.id === Number(pId));
     if (!selectedProd) return;
 
-    const defaultTax = typeof window !== "undefined" ? getDefaultTaxRate() : 18;
+    const defaultTax = typeof window !== "undefined" ? getDefaultTaxRate() : 8.25;
+    const actualPrice = Number(selectedProd.sellingPrice || 0);
+    const actualTax = Number(selectedProd.taxRate ?? defaultTax);
+
     setItems((prev) =>
       prev.map((item, idx) => {
         if (idx !== index) return item;
         const lineTotal = calculateLineTotal(
           item.quantity,
-          selectedProd.sellingPrice,
+          actualPrice,
           item.discount,
-          selectedProd.taxRate || defaultTax,
+          actualTax,
         );
         return {
           ...item,
           productId: selectedProd.id,
           sku: selectedProd.sku,
           productName: selectedProd.name,
-          unitPrice: selectedProd.sellingPrice,
-          taxRate: selectedProd.taxRate || defaultTax,
+          unitPrice: actualPrice,
+          taxRate: actualTax,
           lineTotal,
         };
       }),
@@ -184,27 +220,26 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
   };
 
   const addItem = () => {
-    const firstProd = products[0];
-    const defaultTax = typeof window !== "undefined" ? getDefaultTaxRate() : 18;
-    const rate = firstProd?.taxRate || defaultTax;
+    const firstProd = productsList[0];
+    const defaultTax = typeof window !== "undefined" ? getDefaultTaxRate() : 8.25;
+    const actualPrice = firstProd ? Number(firstProd.sellingPrice || 0) : 0;
+    const rate = firstProd ? Number(firstProd.taxRate ?? defaultTax) : defaultTax;
+
     const newItem: InvoiceLineItem = {
       id: Date.now(),
-      productId: firstProd?.id || 1,
-      sku: firstProd?.sku || "BED-001",
-      productName: firstProd?.name || "Cotton Bedsheet Set - Queen",
+      productId: firstProd?.id || 0,
+      sku: firstProd?.sku || "",
+      productName: firstProd?.name || "Select Product",
       quantity: 1,
-      unitPrice: firstProd?.sellingPrice || 189,
+      unitPrice: actualPrice,
       discount: 0,
       taxRate: rate,
-      lineTotal:
-        Math.round((firstProd?.sellingPrice || 189) * (1 + rate / 100) * 100) /
-        100,
+      lineTotal: Math.round(actualPrice * (1 + rate / 100) * 100) / 100,
     };
     setItems((prev) => [...prev, newItem]);
   };
 
   const removeItem = (index: number) => {
-    if (items.length <= 1) return;
     setItems((prev) => prev.filter((_, idx) => idx !== index));
   };
 
@@ -266,18 +301,17 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!validateForm()) {
       setFeedbackMessage("");
       return;
     }
 
-    const selectedChannel = salesChannels.find((c) => c.id === Number(salesChannelId));
-    const selectedWarehouse = warehouses.find((w) => w.id === Number(warehouseId));
+    const selectedChannel = salesChannelsList.find((c) => c.id === Number(salesChannelId));
+    const selectedWarehouse = warehousesList.find((w) => w.id === Number(warehouseId));
 
-    const payload: Invoice = {
-      id: invoice?.id || Date.now(),
+    const payload = {
       invoiceNumber,
       invoiceDate,
       dueDate,
@@ -290,7 +324,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
       billingAddress: billingAddress.trim(),
       shippingAddress: shippingAddress.trim(),
       warehouseId: Number(warehouseId),
-      warehouseName: selectedWarehouse?.name || "CDC",
+      warehouseName: selectedWarehouse?.name || "Main Warehouse",
       items,
       subtotal,
       discountTotal,
@@ -305,17 +339,30 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
       status,
       notes: notes.trim(),
       termsAndConditions: paymentTerms.trim(),
-      createdAt: invoice?.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
     };
 
-    console.log("Invoice submitted payload:", payload);
-
-    setFeedbackMessage(
-      isEdit
-        ? `Invoice ${invoiceNumber} updated successfully with payment status ${paymentStatus}!`
-        : `Invoice ${invoiceNumber} issued for ${grandTotal.toFixed(2)} (${paymentStatus}). ${status === "ISSUED" ? "Inventory reserved." : ""}`, 
-    );
+    setIsSubmitting(true);
+    try {
+      if (isEdit && invoice?.id) {
+        const res = await updateInvoiceApi(invoice.id, payload);
+        if (res.success) {
+          router.push("/invoices");
+        } else {
+          setFeedbackMessage(res.message || "Failed to update invoice");
+        }
+      } else {
+        const res = await createInvoiceApi(payload);
+        if (res.success) {
+          router.push("/invoices");
+        } else {
+          setFeedbackMessage(res.message || "Failed to create invoice");
+        }
+      }
+    } catch (err: any) {
+      setFeedbackMessage(err?.message || "An error occurred while saving invoice");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -372,7 +419,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
                 value={salesChannelId}
                 onChange={(e) => setSalesChannelId(Number(e.target.value))}
               >
-                {salesChannels.map((c) => (
+                {salesChannelsList.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} ({c.type})
                   </option>
@@ -403,7 +450,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
                 value={warehouseId}
                 onChange={(e) => setWarehouseId(Number(e.target.value))}
               >
-                {warehouses.map((w) => (
+                {warehousesList.map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name} ({w.warehouseCode})
                   </option>
@@ -589,7 +636,14 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--border-light)]">
-                {items.map((item, index) => (
+                {items.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-xs text-[var(--muted)]">
+                      No line items added yet. Click &quot;+ Add Product&quot; to select items from the live catalog.
+                    </td>
+                  </tr>
+                ) : (
+                  items.map((item, index) => (
                   <tr key={item.id}>
                     <td className="py-3 pr-3">
                       <select
@@ -599,7 +653,7 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
                           handleProductSelect(index, Number(e.target.value))
                         }
                       >
-                        {products.map((p) => (
+                        {productsList.map((p) => (
                           <option key={p.id} value={p.id}>
                             {p.name} ({p.sku}) — Stock: {p.stock}
                           </option>
@@ -685,14 +739,14 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
                       <button
                         type="button"
                         onClick={() => removeItem(index)}
-                        disabled={items.length <= 1}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-red-50 hover:text-[var(--danger)] disabled:opacity-30 disabled:pointer-events-none"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-red-50 hover:text-[var(--danger)]"
                       >
                         <Trash2 size={15} />
                       </button>
                     </td>
                   </tr>
-                ))}
+                ))
+              )}
               </tbody>
             </table>
           </div>
@@ -899,10 +953,11 @@ export function InvoiceForm({ mode, invoice }: InvoiceFormProps) {
 
           <button
             type="submit"
-            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+            disabled={isSubmitting}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-5 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)] disabled:opacity-50"
           >
             <Save size={16} />
-            {isEdit ? "Save Changes" : "Save / Finalize Invoice"}
+            {isSubmitting ? "Saving..." : isEdit ? "Save Changes" : "Save / Finalize Invoice"}
           </button>
         </div>
       </form>

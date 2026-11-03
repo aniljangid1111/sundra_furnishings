@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, use, useState } from "react";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import {
+  AlertCircle,
   ArrowLeft,
   Building2,
   Calendar,
@@ -16,45 +17,86 @@ import {
   Truck,
   Warehouse,
 } from "lucide-react";
-import { purchases } from "@/features/purchases/purchase.data";
+import { getPurchaseByIdApi } from "@/lib/api/purchase.api";
 import { downloadPurchasePdf } from "@/lib/pdf-export";
+import { PermissionGate } from "@/lib/auth/permissions";
+import type { Purchase } from "@/features/purchases/purchase.types";
 
-interface PurchaseViewPageProps {
-  params: Promise<{ id: string }>;
-}
-
-export default function PurchaseViewPage({ params }: PurchaseViewPageProps) {
-  return (
-    <Suspense
-      fallback={
-        <div className="p-6 text-sm text-[var(--muted)]">
-          Loading purchase order details...
-        </div>
-      }
-    >
-      <PurchaseViewContent params={params} />
-    </Suspense>
-  );
-}
-
-function PurchaseViewContent({ params }: PurchaseViewPageProps) {
-  const { id } = use(params);
+export default function PurchaseViewPage() {
+  const params = useParams();
+  const id = params?.id as string;
+  const [purchase, setPurchase] = useState<Purchase | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const purchase = purchases.find(
-    (p) =>
-      p.id === Number(id) ||
-      p.purchaseNumber.toLowerCase() === id.toLowerCase(),
-  );
+  useEffect(() => {
+    if (!id) return;
+    let mounted = true;
+    setIsLoading(true);
+    setError(null);
 
-  if (!purchase) {
-    notFound();
+    getPurchaseByIdApi(id)
+      .then((res) => {
+        if (!mounted) return;
+        if (res.success && res.data) {
+          setPurchase(res.data);
+        } else {
+          setError(res.message || "Purchase order not found");
+        }
+      })
+      .catch((err: any) => {
+        if (!mounted) return;
+        setError(err.message || "Failed to load purchase order");
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-72 items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-[var(--muted)]">
+          <Loader2 size={32} className="animate-spin text-[var(--primary)]" />
+          <p className="text-sm font-medium">Loading purchase order details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !purchase) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-2xl border border-[var(--border)] bg-white p-8 text-center shadow-xs">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600">
+          <AlertCircle size={26} />
+        </div>
+        <h2 className="mt-4 text-lg font-semibold tracking-tight text-[var(--foreground)]">
+          Purchase Order Not Found
+        </h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          {error || "The purchase order you are looking for does not exist."}
+        </p>
+        <div className="mt-6 flex justify-center">
+          <Link
+            href="/purchases"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-xs font-medium text-white transition hover:bg-[var(--primary-dark)]"
+          >
+            <ArrowLeft size={14} /> Back to Purchases
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   const isReceived = purchase.status === "RECEIVED";
   const isCancelled = purchase.status === "CANCELLED";
 
-  // Direct 1-Click PDF Download (jsPDF library - No print preview dialog)
+  // Direct 1-Click PDF Download
   const handleDownload = async () => {
     setIsDownloading(true);
     try {

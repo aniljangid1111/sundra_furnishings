@@ -1,31 +1,93 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import {
+  AlertCircle,
   ArrowLeft,
+  CheckCircle2,
   Edit,
+  Loader2,
   Package,
   Tag,
+  XCircle,
 } from "lucide-react";
 
-import { categories } from "@/features/categories/category.data";
+import { getCategoryByIdApi } from "@/lib/api/category.api";
+import { PermissionGate } from "@/lib/auth/permissions";
+import type { Category, CategoryStatus } from "@/features/categories/category.types";
 
-interface CategoryViewPageProps {
-  params: Promise<{
-    id: string;
-  }>;
-}
+export default function CategoryViewPage() {
+  const params = useParams();
+  const id = params?.id as string;
 
-export default async function CategoryViewPage({
-  params,
-}: CategoryViewPageProps) {
-  const { id } = await params;
+  const [category, setCategory] = useState<Category | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const category = categories.find(
-    (item) => item.id === Number(id),
-  );
+  useEffect(() => {
+    if (!id) return;
 
-  if (!category) {
-    notFound();
+    let mounted = true;
+    setIsLoading(true);
+    setError(null);
+
+    getCategoryByIdApi(id)
+      .then((res) => {
+        if (!mounted) return;
+        if (res.success && res.data) {
+          setCategory(res.data);
+        } else {
+          setError(res.message || "Category not found");
+        }
+      })
+      .catch((err: any) => {
+        if (!mounted) return;
+        setError(err.message || "Failed to load category");
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-72 items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-[var(--muted)]">
+          <Loader2 size={32} className="animate-spin text-[var(--primary)]" />
+          <p className="text-sm font-medium">Loading category details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !category) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-2xl border border-[var(--border)] bg-white p-8 text-center shadow-xs">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600">
+          <AlertCircle size={26} />
+        </div>
+        <h2 className="mt-4 text-lg font-semibold tracking-tight text-[var(--foreground)]">
+          Category Not Found
+        </h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          {error || "The category you are looking for does not exist or has been removed."}
+        </p>
+        <div className="mt-6 flex justify-center gap-3">
+          <Link
+            href="/categories"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-xs font-medium text-white transition hover:bg-[var(--primary-dark)]"
+          >
+            <ArrowLeft size={14} /> Back to Categories
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   const isActive = category.status === "ACTIVE";
@@ -58,13 +120,15 @@ export default async function CategoryViewPage({
           </div>
         </div>
 
-        <Link
-          href={`/categories/edit/${category.id}`}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
-        >
-          <Edit size={16} />
-          Edit Category
-        </Link>
+        <PermissionGate module="categories" action="edit">
+          <Link
+            href={`/categories/edit/${category.id}`}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+          >
+            <Edit size={16} />
+            Edit Category
+          </Link>
+        </PermissionGate>
       </div>
 
       {/* Main Content */}
@@ -109,7 +173,7 @@ export default async function CategoryViewPage({
 
             <DetailItem
               label="Products Assigned"
-              value={String(category.productCount)}
+              value={String(category.productCount ?? 0)}
             />
 
             <div className="md:col-span-2">
@@ -157,7 +221,7 @@ export default async function CategoryViewPage({
 
             <SummaryRow
               label="Products"
-              value={String(category.productCount)}
+              value={String(category.productCount ?? 0)}
             />
 
             <SummaryRow
@@ -168,7 +232,7 @@ export default async function CategoryViewPage({
 
           <div className="border-t border-[var(--border)] p-5">
             <Link
-              href="/products"
+              href={`/products?categoryId=${category.id}`}
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border)] bg-white px-4 py-2.5 text-sm font-medium transition hover:bg-[var(--muted-background)]"
             >
               <Package size={16} />
@@ -176,16 +240,6 @@ export default async function CategoryViewPage({
             </Link>
           </div>
         </section>
-      </div>
-
-      {/* Bottom Navigation */}
-      <div className="mt-5 flex justify-end">
-        <Link
-          href="/categories"
-          className="inline-flex h-10 items-center justify-center rounded-lg border border-[var(--border)] bg-white px-4 text-sm font-medium transition hover:bg-[var(--muted-background)]"
-        >
-          Back to Categories
-        </Link>
       </div>
     </div>
   );
@@ -200,11 +254,11 @@ function DetailItem({
 }) {
   return (
     <div>
-      <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
+      <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
         {label}
       </p>
 
-      <div className="text-sm font-medium">
+      <div className="mt-1 text-sm font-medium text-[var(--foreground)]">
         {value}
       </div>
     </div>
@@ -219,12 +273,12 @@ function SummaryRow({
   value: string;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3">
-      <span className="text-sm text-[var(--muted)]">
+    <div className="flex items-center justify-between py-3 text-sm">
+      <span className="text-[var(--muted)]">
         {label}
       </span>
 
-      <span className="max-w-[60%] truncate text-right text-sm font-medium">
+      <span className="font-medium text-[var(--foreground)]">
         {value}
       </span>
     </div>
@@ -234,18 +288,23 @@ function SummaryRow({
 function StatusBadge({
   status,
 }: {
-  status: "ACTIVE" | "INACTIVE";
+  status: CategoryStatus;
 }) {
   const isActive = status === "ACTIVE";
 
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
         isActive
-          ? "bg-emerald-50 text-[var(--success)]"
-          : "bg-gray-100 text-[var(--muted)]"
+          ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border border-zinc-200 bg-zinc-100 text-zinc-600"
       }`}
     >
+      {isActive ? (
+        <CheckCircle2 size={12} className="text-emerald-500" />
+      ) : (
+        <XCircle size={12} className="text-zinc-400" />
+      )}
       {isActive ? "Active" : "Inactive"}
     </span>
   );

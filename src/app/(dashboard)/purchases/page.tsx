@@ -1,15 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  AlertCircle,
   Calendar,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Download,
   Eye,
   FileText,
+  Loader2,
   MoreHorizontal,
   PackageCheck,
   Pencil,
@@ -17,588 +21,566 @@ import {
   RotateCcw,
   Search,
   ShoppingCart,
+  Trash2,
   XCircle,
 } from "lucide-react";
-import { purchases as initialPurchases } from "@/features/purchases/purchase.data";
-import { suppliers } from "@/features/suppliers/supplier.data";
-import { downloadPurchasePdf } from "@/lib/pdf-export";
-import { DateRangeFilter } from "@/components/ui/date-range-filter";
+
 import type {
   Purchase,
   PurchaseStatus,
 } from "@/features/purchases/purchase.types";
+import type { Supplier } from "@/features/suppliers/supplier.types";
+import {
+  getPurchasesApi,
+  deletePurchaseApi,
+  type PurchaseKpi,
+} from "@/lib/api/purchase.api";
+import { getSuppliersApi } from "@/lib/api/supplier.api";
+import { downloadPurchasePdf } from "@/lib/pdf-export";
+import { CountUp } from "@/components/ui/count-up";
+import { PermissionGate } from "@/lib/auth/permissions";
 
 type TimeRange = "TODAY" | "7D" | "30D" | "CUSTOM" | "ALL";
 
-function isWithinTimeRange(
-  dateStr: string,
-  range: TimeRange,
-  customStart?: string,
-  customEnd?: string
-): boolean {
-  if (range === "ALL") return true;
-  if (!dateStr) return true;
-  const d = new Date(dateStr);
-  const now = new Date();
-  const anchorTime = now.getFullYear() >= 2026 ? now.getTime() : new Date("2026-10-18T23:59:59Z").getTime();
-  const diffDays = Math.abs(anchorTime - d.getTime()) / (1000 * 60 * 60 * 24);
-
-  if (range === "TODAY") {
-    return dateStr.startsWith("2026-10-18") || d.toDateString() === now.toDateString();
-  }
-  if (range === "7D") {
-    return diffDays <= 7 || dateStr.startsWith("2026-10-1");
-  }
-  if (range === "30D") {
-    return diffDays <= 30 || dateStr.startsWith("2026-10") || dateStr.startsWith("2026-09");
-  }
-  if (range === "CUSTOM") {
-    if (!customStart && !customEnd) return true;
-    const time = new Date(dateStr).getTime();
-    if (customStart && time < new Date(customStart).getTime()) return false;
-    if (customEnd && time > new Date(`${customEnd}T23:59:59`).getTime()) return false;
-    return true;
-  }
-  return true;
-}
-
 export default function PurchasesPage() {
-  const [purchaseList, setPurchaseList] =
-    useState<Purchase[]>(initialPurchases);
+  const [purchaseList, setPurchaseList] = useState<Purchase[]>([]);
+  const [supplierList, setSupplierList] = useState<Supplier[]>([]);
+
+  const [kpi, setKpi] = useState<PurchaseKpi>({
+    totalCount: 0,
+    totalValue: 0,
+    receivedCount: 0,
+    draftCount: 0,
+    orderedCount: 0,
+    totalBalanceDue: 0,
+  });
+
+  const [pagination, setPagination] = useState({
+    currentPage: 1,
+    totalPages: 1,
+    totalItems: 0,
+    hasNextPage: false,
+    hasPrevPage: false,
+  });
+
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"ALL" | PurchaseStatus>(
-    "ALL",
-  );
-  const [supplierFilter, setSupplierFilter] = useState<string>("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [supplierFilter, setSupplierFilter] = useState("ALL");
   const [timeRange, setTimeRange] = useState<TimeRange>("ALL");
-  const [customStartDate, setCustomStartDate] = useState("2026-10-01");
-  const [customEndDate, setCustomEndDate] = useState("2026-10-28");
+
   const [openMenuId, setOpenMenuId] = useState<number | null>(null);
-  const [actionNotice, setActionNotice] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const filteredPurchases = useMemo(() => {
-    const query = search.trim().toLowerCase();
+  // Deletion
+  const [deleteTarget, setDeleteTarget] = useState<Purchase | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-    return purchaseList.filter((p) => {
-      const matchesSearch =
-        !query ||
-        p.purchaseNumber.toLowerCase().includes(query) ||
-        p.supplierName.toLowerCase().includes(query) ||
-        (p.supplierInvoiceNumber &&
-          p.supplierInvoiceNumber.toLowerCase().includes(query)) ||
-        (p.containerNumber &&
-          p.containerNumber.toLowerCase().includes(query));
+  // Fetch suppliers for filter dropdown
+  useEffect(() => {
+    getSuppliersApi({ limit: "all" })
+      .then((res) => {
+        if (res.success && res.data) {
+          setSupplierList(res.data);
+        }
+      })
+      .catch((err) => console.error("Failed to load suppliers for PO filter", err));
+  }, []);
 
-      const matchesStatus =
-        statusFilter === "ALL" || p.status === statusFilter;
+  const loadPurchases = useCallback(
+    async (pageToLoad = 1) => {
+      setIsLoading(true);
+      setError(null);
 
-      const matchesSupplier =
-        supplierFilter === "ALL" || String(p.supplierId) === supplierFilter;
+      try {
+        const suppId =
+          supplierFilter !== "ALL" ? Number(supplierFilter) : undefined;
 
-      const matchesTime = isWithinTimeRange(
-        p.purchaseDate || p.createdAt,
-        timeRange,
-        customStartDate,
-        customEndDate
-      );
+        const res = await getPurchasesApi({
+          page: pageToLoad,
+          limit: 10,
+          search: search.trim() || undefined,
+          status: statusFilter !== "ALL" ? statusFilter : undefined,
+          supplierId: isNaN(suppId as number) ? undefined : suppId,
+          timeRange: timeRange !== "ALL" ? timeRange : undefined,
+        });
 
-      return matchesSearch && matchesStatus && matchesSupplier && matchesTime;
-    });
-  }, [purchaseList, search, statusFilter, supplierFilter, timeRange]);
-
-  // Derived KPI metrics matching filtered records
-  const totalValue = filteredPurchases.reduce((acc, p) => acc + p.grandTotal, 0);
-  const receivedCount = filteredPurchases.filter((p) => p.status === "RECEIVED").length;
-  const draftCount = filteredPurchases.filter((p) => p.status === "DRAFT").length;
-  const totalBalanceDue = filteredPurchases.reduce(
-    (acc, p) => acc + p.balanceDue,
-    0,
+        if (res.success) {
+          setPurchaseList(res.data || []);
+          if (res.kpi) {
+            setKpi(res.kpi as PurchaseKpi);
+          }
+          if (res.pagination) {
+            setPagination({
+              currentPage: res.pagination.currentPage,
+              totalPages: res.pagination.totalPages,
+              totalItems: res.pagination.totalItems,
+              hasNextPage: res.pagination.hasNextPage,
+              hasPrevPage: res.pagination.hasPrevPage,
+            });
+          }
+        }
+      } catch (err: any) {
+        setError(err.message || "Failed to load purchase orders from server.");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [search, statusFilter, supplierFilter, timeRange]
   );
 
-  const isFiltered =
-    search.trim() !== "" || statusFilter !== "ALL" || supplierFilter !== "ALL";
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      loadPurchases(1);
+    }, 250);
 
-  const handleResetFilters = () => {
-    setSearch("");
-    setStatusFilter("ALL");
-    setSupplierFilter("ALL");
-  };
+    return () => clearTimeout(timer);
+  }, [loadPurchases]);
 
-  const handleReceiveItems = (id: number) => {
-    setPurchaseList((prev) =>
-      prev.map((p) => {
-        if (p.id === id) {
-          const updatedItems = p.items.map((item) => ({
-            ...item,
-            receivedQuantity: item.quantity,
-          }));
-          return { ...p, status: "RECEIVED" as PurchaseStatus, items: updatedItems };
-        }
-        return p;
-      }),
-    );
-    setOpenMenuId(null);
-    setActionNotice(
-      "Purchase received! Inventory has been committed to destination warehouse in local session state.",
-    );
-    setTimeout(() => setActionNotice(null), 5000);
-  };
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
 
-  const handleCancelOrder = (id: number) => {
-    setPurchaseList((prev) =>
-      prev.map((p) =>
-        p.id === id ? { ...p, status: "CANCELLED" as PurchaseStatus } : p,
-      ),
-    );
-    setOpenMenuId(null);
-    setActionNotice("Purchase order marked as CANCELLED.");
-    setTimeout(() => setActionNotice(null), 4000);
-  };
-
-  const handleDownloadPurchase = async (purchaseId: number) => {
-    const p = purchaseList.find((item) => item.id === purchaseId);
-    if (!p) return;
     try {
-      await downloadPurchasePdf(p);
-    } catch (err) {
-      console.error("PDF download error:", err);
+      await deletePurchaseApi(deleteTarget.id);
+      setDeleteTarget(null);
+      setOpenMenuId(null);
+      loadPurchases(pagination.currentPage);
+    } catch (err: any) {
+      alert(err.message || "Failed to delete purchase order");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const statusBadge = (status: PurchaseStatus) => {
+    switch (status) {
+      case "RECEIVED":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+            <CheckCircle2 size={12} /> Received
+          </span>
+        );
+      case "ORDERED":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
+            <Clock size={12} /> Ordered
+          </span>
+        );
+      case "PARTIALLY_RECEIVED":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+            <PackageCheck size={12} /> Partial
+          </span>
+        );
+      case "DRAFT":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-medium text-zinc-600">
+            Draft
+          </span>
+        );
+      case "CANCELLED":
+        return (
+          <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-600">
+            <XCircle size={12} /> Cancelled
+          </span>
+        );
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
+      {/* Page Header */}
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Purchases</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Purchase Orders</h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            Manage purchase orders, supplier shipments, receiving, and procurement costs.
+            Manage procurement, supplier invoices, container imports, and inventory replenishment.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
-          <DateRangeFilter
-            value={timeRange}
-            onChange={setTimeRange}
-            startDate={customStartDate}
-            endDate={customEndDate}
-            onStartDateChange={setCustomStartDate}
-            onEndDateChange={setCustomEndDate}
-          />
-
+        <PermissionGate module="purchases" action="create">
           <Link
             href="/purchases/new"
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[var(--primary)] px-3.5 text-xs font-semibold text-white! shadow-xs transition hover:bg-[var(--primary-dark)] whitespace-nowrap"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! shadow-sm transition hover:bg-[var(--primary-dark)]"
           >
-            <Plus size={16} />
-            <span>New Purchase Order</span>
+            <Plus size={18} />
+            Create Purchase Order
           </Link>
-        </div>
+        </PermissionGate>
       </div>
 
-      {actionNotice && (
-        <div
-          role="status"
-          className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"
-        >
-          {actionNotice}
+      {error && (
+        <div className="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <AlertCircle size={18} className="shrink-0 text-red-600" />
+          <p className="flex-1 font-medium">{error}</p>
         </div>
       )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard
-          label="Total Purchase Value"
-          value={`$${totalValue.toLocaleString("en-US", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}`}
-          icon={ShoppingCart}
-          color="text-emerald-700"
-          bg="bg-[var(--primary-light)]"
-        />
-        <SummaryCard
-          label="Received Purchases"
-          value={receivedCount}
-          icon={PackageCheck}
-          color="text-emerald-700"
-          bg="bg-emerald-50"
-        />
-        <SummaryCard
-          label="Draft Orders"
-          value={draftCount}
-          icon={Clock}
-          color="text-blue-700"
-          bg="bg-blue-50"
-        />
-        <SummaryCard
-          label="Outstanding Balance"
-          value={`$${totalBalanceDue.toLocaleString("en-US", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2,
-          })}`}
-          icon={FileText}
-          color="text-amber-700"
-          bg="bg-amber-50"
-        />
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+              Total Purchase Orders
+            </p>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[var(--primary-light)] text-[var(--primary)]">
+              <ShoppingCart size={18} />
+            </span>
+          </div>
+          <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--foreground)]">
+            <CountUp value={kpi.totalCount} isLoading={isLoading} />
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+              Received Orders
+            </p>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
+              <CheckCircle2 size={18} />
+            </span>
+          </div>
+          <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--foreground)]">
+            <CountUp value={kpi.receivedCount} isLoading={isLoading} />
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+              Ordered / In Transit
+            </p>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+              <Clock size={18} />
+            </span>
+          </div>
+          <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--foreground)]">
+            <CountUp value={kpi.orderedCount} isLoading={isLoading} />
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-xs">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+              Total Procurement Value
+            </p>
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-50 text-purple-700">
+              <FileText size={18} />
+            </span>
+          </div>
+          <p className="mt-3 text-2xl font-bold tracking-tight text-[var(--foreground)]">
+            <CountUp
+              value={kpi.totalValue}
+              isLoading={isLoading}
+              prefix="$"
+              decimals={2}
+            />
+          </p>
+        </div>
       </div>
 
-      {/* Table Card */}
-      <div className="rounded-2xl border border-[var(--border)] bg-white">
-        {/* Filters Bar */}
+      {/* Main Table Container */}
+      <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-white shadow-xs">
+        {/* Filters bar */}
         <div className="flex flex-col gap-3 border-b border-[var(--border-light)] p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative w-full sm:max-w-xs md:max-w-sm">
+          <div className="relative flex-1">
             <Search
               size={18}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
             />
             <input
+              type="text"
+              placeholder="Search PO number, supplier, container, or invoice..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search PO#, supplier, inv#..."
-              className="form-input !pl-10"
+              className="form-input !pl-10 text-sm"
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
-            <div className="relative w-44">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative min-w-[150px]">
               <select
                 value={supplierFilter}
                 onChange={(e) => setSupplierFilter(e.target.value)}
-                className="form-input appearance-none pr-10"
-                aria-label="Filter by supplier"
+                className="form-input appearance-none pr-8 text-sm"
               >
                 <option value="ALL">All Suppliers</option>
-                {suppliers.map((s) => (
+                {supplierList.map((s) => (
                   <option key={s.id} value={String(s.id)}>
                     {s.companyName || s.contactPerson}
                   </option>
                 ))}
               </select>
               <ChevronDown
-                size={17}
+                size={16}
                 className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
               />
             </div>
 
-            <div className="relative w-40">
+            <div className="relative min-w-[130px]">
               <select
                 value={statusFilter}
-                onChange={(e) =>
-                  setStatusFilter(e.target.value as "ALL" | PurchaseStatus)
-                }
-                className="form-input appearance-none pr-10"
-                aria-label="Filter by purchase status"
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="form-input appearance-none pr-8 text-sm"
               >
-                <option value="ALL">All Statuses</option>
+                <option value="ALL">All Status</option>
                 <option value="DRAFT">Draft</option>
                 <option value="ORDERED">Ordered</option>
+                <option value="PARTIALLY_RECEIVED">Partially Received</option>
                 <option value="RECEIVED">Received</option>
                 <option value="CANCELLED">Cancelled</option>
               </select>
               <ChevronDown
-                size={17}
+                size={16}
                 className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted)]"
               />
             </div>
-
-            {isFiltered && (
-              <button
-                type="button"
-                onClick={handleResetFilters}
-                className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-[var(--border)] bg-white px-3 text-xs font-medium text-[var(--muted)] hover:bg-[var(--muted-background)] hover:text-[var(--foreground)]"
-                title="Reset filters"
-              >
-                <RotateCcw size={13} />
-                Reset
-              </button>
-            )}
           </div>
         </div>
 
-        {/* Table Content */}
+        {/* Table View */}
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-left text-sm">
-            <thead className="bg-[var(--muted-background)] text-xs uppercase tracking-wide text-[var(--muted)]">
-              <tr>
-                <th className="px-5 py-3.5 font-medium">Purchase #</th>
-                <th className="px-5 py-3.5 font-medium">Invoice Date</th>
-                <th className="px-5 py-3.5 font-medium">Supplier</th>
-                <th className="px-5 py-3.5 font-medium">Warehouse</th>
-                <th className="px-5 py-3.5 text-right font-medium">Total</th>
-                <th className="px-5 py-3.5 text-right font-medium">Paid</th>
-                <th className="px-5 py-3.5 text-right font-medium">Balance</th>
-                <th className="px-5 py-3.5 font-medium">Status</th>
-                <th className="px-5 py-3.5 text-right font-medium">Actions</th>
+          <table className="w-full min-w-[950px] border-collapse text-left text-sm">
+            <thead>
+              <tr className="border-b border-[var(--border-light)] bg-[#fafcfb] text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                <th className="px-6 py-4">PO Number</th>
+                <th className="px-6 py-4">Supplier</th>
+                <th className="px-6 py-4">Warehouse</th>
+                <th className="px-6 py-4">Date</th>
+                <th className="px-6 py-4">Total</th>
+                <th className="px-6 py-4">Balance</th>
+                <th className="px-6 py-4">Status</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
-
             <tbody className="divide-y divide-[var(--border-light)]">
-              {filteredPurchases.map((p) => {
-                return (
-                  <tr key={p.id} className="transition hover:bg-[#fafcfb]">
-                    <td className="px-5 py-4 font-mono text-xs font-semibold text-[var(--foreground)]">
-                      <Link
-                        href={`/purchases/view/${p.id}`}
-                        className="hover:text-[var(--primary)] hover:underline"
-                      >
+              {isLoading ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-16 text-center">
+                    <div className="flex flex-col items-center justify-center gap-2 text-[var(--muted)]">
+                      <Loader2 size={28} className="animate-spin text-[var(--primary)]" />
+                      <p className="text-xs font-medium">Loading purchase orders...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : purchaseList.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-16 text-center">
+                    <div className="mx-auto flex max-w-sm flex-col items-center">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--muted-background)] text-[var(--muted)]">
+                        <ShoppingCart size={22} />
+                      </div>
+                      <p className="mt-4 text-sm font-medium">No purchase orders found</p>
+                      <p className="mt-1 text-xs text-[var(--muted)]">
+                        Try adjusting your search or create a new order.
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                purchaseList.map((p) => {
+                  const isMenuOpen = openMenuId === p.id;
+
+                  return (
+                    <tr
+                      key={p.id}
+                      className="transition-colors hover:bg-[var(--muted-background)]/50"
+                    >
+                      <td className="px-6 py-4 font-mono font-medium text-[var(--foreground)]">
                         {p.purchaseNumber}
-                      </Link>
-                      {p.supplierInvoiceNumber && (
-                        <p className="font-sans text-[11px] font-normal text-[var(--muted)]">
-                          Inv: {p.supplierInvoiceNumber}
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <p className="font-medium text-[var(--foreground)]">
+                          {p.supplierName}
                         </p>
-                      )}
-                      {p.containerNumber && (
-                        <p className="font-sans text-[11px] font-normal text-[var(--muted)]">
-                          Cont: {p.containerNumber}
-                        </p>
-                      )}
-                    </td>
+                        {p.supplierInvoiceNumber && (
+                          <p className="font-mono text-xs text-[var(--muted)]">
+                            Inv: {p.supplierInvoiceNumber}
+                          </p>
+                        )}
+                      </td>
 
-                    <td className="px-5 py-4 text-xs text-[var(--muted)]">
-                      <span className="font-medium text-[var(--foreground)]">{p.purchaseDate}</span>
-                      {p.expectedDate && (
-                        <p className="text-[11px] text-[var(--muted)]">Inward: {p.expectedDate}</p>
-                      )}
-                    </td>
+                      <td className="px-6 py-4 text-xs text-[var(--foreground)]">
+                        {p.warehouseName}
+                      </td>
 
-                    <td className="px-5 py-4 font-medium text-[var(--foreground)]">
-                      {p.supplierName}
-                    </td>
-
-                    <td className="px-5 py-4 text-xs text-[var(--muted)]">
-                      {p.warehouseName}
-                    </td>
-
-                    <td className="px-5 py-4 text-right font-semibold text-[var(--foreground)]">
-                      ${p.grandTotal.toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
-
-                    <td className="px-5 py-4 text-right text-xs text-[var(--muted)]">
-                      ${p.amountPaid.toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </td>
-
-                    <td className="px-5 py-4 text-right text-xs font-medium">
-                      <span
-                        className={
-                          p.balanceDue > 0
-                            ? "text-amber-700"
-                            : "text-[var(--muted)]"
-                        }
-                      >
-                        ${p.balanceDue.toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
+                      <td className="px-6 py-4 text-xs text-[var(--muted)]">
+                        {new Date(p.purchaseDate).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
                         })}
-                      </span>
-                    </td>
+                      </td>
 
-                    <td className="px-5 py-4">
-                      <PurchaseStatusBadge status={p.status} />
-                    </td>
+                      <td className="px-6 py-4 text-sm font-semibold text-[var(--foreground)]">
+                        ${Number(p.grandTotal || 0).toFixed(2)}
+                      </td>
 
-                    <td className="px-5 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1">
+                      <td className="px-6 py-4 text-xs font-medium">
+                        {p.balanceDue > 0 ? (
+                          <span className="text-amber-600">
+                            ${Number(p.balanceDue).toFixed(2)} due
+                          </span>
+                        ) : (
+                          <span className="text-emerald-600">Settled</span>
+                        )}
+                      </td>
+
+                      <td className="px-6 py-4">{statusBadge(p.status)}</td>
+
+                      <td className="relative px-6 py-4 text-right">
                         <button
                           type="button"
-                          onClick={() => handleDownloadPurchase(p.id)}
-                          title="Download Purchase Order PDF"
-                          className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--muted-background)] hover:text-[var(--primary)]"
+                          onClick={() =>
+                            setOpenMenuId(isMenuOpen ? null : p.id)
+                          }
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-[var(--muted-background)] hover:text-[var(--foreground)]"
+                          aria-label={`Actions for PO ${p.purchaseNumber}`}
                         >
-                          <Download size={15} />
+                          <MoreHorizontal size={18} />
                         </button>
 
-                        <div className="relative inline-block text-left">
-                          <button
-                            type="button"
-                            aria-label={`Actions for ${p.purchaseNumber}`}
-                            aria-expanded={openMenuId === p.id}
-                            onClick={() =>
-                              setOpenMenuId(openMenuId === p.id ? null : p.id)
-                            }
-                            className="flex h-9 w-9 items-center justify-center rounded-lg text-[var(--muted)] transition hover:bg-[var(--muted-background)] hover:text-[var(--foreground)]"
-                          >
-                            <MoreHorizontal size={18} />
-                          </button>
-
-                          {openMenuId === p.id && (
+                        {isMenuOpen && (
+                          <>
                             <div
-                              className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-[var(--border)] bg-white p-1 text-left shadow-lg"
-                              onMouseLeave={() => setOpenMenuId(null)}
-                            >
+                              className="fixed inset-0 z-30"
+                              onClick={() => setOpenMenuId(null)}
+                            />
+
+                            <div className="absolute right-6 top-12 z-40 w-44 rounded-xl border border-[var(--border)] bg-white p-1 text-left shadow-lg">
                               <Link
                                 href={`/purchases/view/${p.id}`}
+                                className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)]"
                                 onClick={() => setOpenMenuId(null)}
-                                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted-background)]"
                               >
-                                <Eye size={15} className="text-[var(--muted)]" />
-                                View Order
+                                <Eye size={14} /> View Details
                               </Link>
 
                               <button
                                 type="button"
                                 onClick={() => {
+                                  downloadPurchasePdf(p);
                                   setOpenMenuId(null);
-                                  handleDownloadPurchase(p.id);
                                 }}
-                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[var(--foreground)] hover:bg-[var(--muted-background)]"
+                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)]"
                               >
-                                <Download size={15} className="text-[var(--muted)]" />
-                                Download PDF
+                                <Download size={14} /> Download PDF
                               </button>
 
-                            {p.status !== "RECEIVED" && p.status !== "CANCELLED" && (
-                              <Link
-                                href={`/purchases/edit/${p.id}`}
-                                onClick={() => setOpenMenuId(null)}
-                                className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--foreground)] hover:bg-[var(--muted-background)]"
-                              >
-                                <Pencil size={15} className="text-[var(--muted)]" />
-                                Edit Order
-                              </Link>
-                            )}
+                              <PermissionGate module="purchases" action="edit">
+                                <Link
+                                  href={`/purchases/edit/${p.id}`}
+                                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)]"
+                                  onClick={() => setOpenMenuId(null)}
+                                >
+                                  <Pencil size={14} /> Edit Order
+                                </Link>
+                              </PermissionGate>
 
-                            {p.status !== "RECEIVED" && p.status !== "CANCELLED" && (
-                              <button
-                                type="button"
-                                onClick={() => handleReceiveItems(p.id)}
-                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-emerald-800 hover:bg-emerald-50"
-                              >
-                                <PackageCheck size={15} />
-                                Receive Stock
-                              </button>
-                            )}
-
-                            {p.status !== "CANCELLED" && (
-                              <button
-                                type="button"
-                                onClick={() => handleCancelOrder(p.id)}
-                                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[var(--danger)] hover:bg-red-50"
-                              >
-                                <XCircle size={15} />
-                                Cancel Order
-                              </button>
-                            )}
-                          </div>
+                              <PermissionGate module="purchases" action="delete">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDeleteTarget(p);
+                                    setOpenMenuId(null);
+                                  }}
+                                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50"
+                                >
+                                  <Trash2 size={14} /> Delete
+                                </button>
+                              </PermissionGate>
+                            </div>
+                          </>
                         )}
-                      </div>
-                    </div>
-                  </td>
-                  </tr>
-                );
-              })}
-
-              {filteredPurchases.length === 0 && (
-                <tr>
-                  <td colSpan={9} className="px-5 py-12 text-center">
-                    <div className="mx-auto max-w-sm space-y-2">
-                      <ShoppingCart
-                        size={32}
-                        className="mx-auto text-[var(--muted)]"
-                      />
-                      <p className="text-base font-semibold text-[var(--foreground)]">
-                        No purchase orders found
-                      </p>
-                      <p className="text-xs text-[var(--muted)]">
-                        Try modifying search or filter criteria.
-                      </p>
-                      {isFiltered && (
-                        <div className="pt-2">
-                          <button
-                            type="button"
-                            onClick={handleResetFilters}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-white px-3 py-1.5 text-xs font-medium text-[var(--foreground)] hover:bg-[var(--muted-background)]"
-                          >
-                            <RotateCcw size={13} />
-                            Reset Filters
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
 
-        {/* Footer */}
-        <div className="border-t border-[var(--border-light)] px-5 py-3">
-          <p className="text-xs text-[var(--muted)]">
-            Showing {filteredPurchases.length} of {purchaseList.length} purchases
-          </p>
+        {/* Pagination Bar */}
+        {!isLoading && pagination.totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-[var(--border-light)] px-6 py-4 text-xs text-[var(--muted)]">
+            <span>
+              Showing Page {pagination.currentPage} of {pagination.totalPages} (
+              {pagination.totalItems} total orders)
+            </span>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={!pagination.hasPrevPage}
+                onClick={() => loadPurchases(pagination.currentPage - 1)}
+                className="flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 font-medium text-[var(--foreground)] transition hover:bg-[var(--muted-background)] disabled:opacity-40"
+              >
+                <ChevronLeft size={14} /> Previous
+              </button>
+
+              <button
+                type="button"
+                disabled={!pagination.hasNextPage}
+                onClick={() => loadPurchases(pagination.currentPage + 1)}
+                className="flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] bg-white px-2.5 font-medium text-[var(--foreground)] transition hover:bg-[var(--muted-background)] disabled:opacity-40"
+              >
+                Next <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/45 backdrop-blur-xs"
+            onClick={() => setDeleteTarget(null)}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-[var(--border)] bg-white p-6 shadow-2xl">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-red-600">
+              <Trash2 size={22} />
+            </div>
+
+            <h3 className="mt-4 text-lg font-semibold tracking-tight text-[var(--foreground)]">
+              Delete Purchase Order
+            </h3>
+
+            <p className="mt-2 text-sm text-[var(--muted)]">
+              Are you sure you want to permanently delete purchase order{" "}
+              <span className="font-semibold text-[var(--foreground)]">
+                {deleteTarget.purchaseNumber}
+              </span>{" "}
+              from {deleteTarget.supplierName}?
+            </p>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                disabled={isDeleting}
+                className="rounded-xl border border-[var(--border)] bg-white px-4 py-2 text-sm font-medium hover:bg-[var(--muted-background)] disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {isDeleting && <Loader2 size={16} className="animate-spin" />}
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
-}
-
-function SummaryCard({
-  label,
-  value,
-  icon: Icon,
-  color,
-  bg,
-}: {
-  label: string;
-  value: string | number;
-  icon: React.ComponentType<{ size: number }>;
-  color: string;
-  bg: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-[var(--border)] bg-white p-5">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-[var(--muted)]">{label}</p>
-        <span
-          className={`flex h-10 w-10 items-center justify-center rounded-xl ${bg} ${color}`}
-        >
-          <Icon size={19} />
-        </span>
-      </div>
-      <p className="mt-4 text-2xl font-semibold tracking-tight">{value}</p>
-    </div>
-  );
-}
-
-function PurchaseStatusBadge({ status }: { status: PurchaseStatus }) {
-  switch (status) {
-    case "RECEIVED":
-      return (
-        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-[var(--success)]">
-          Received
-        </span>
-      );
-    case "ORDERED":
-      return (
-        <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-          Ordered
-        </span>
-      );
-    case "DRAFT":
-      return (
-        <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-[var(--muted)]">
-          Draft
-        </span>
-      );
-    case "CANCELLED":
-      return (
-        <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-[var(--danger)]">
-          Cancelled
-        </span>
-      );
-    default:
-      return (
-        <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-[var(--muted)]">
-          {status}
-        </span>
-      );
-  }
 }

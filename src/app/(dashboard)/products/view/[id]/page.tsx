@@ -1,30 +1,102 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { useParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
+  AlertCircle,
   ArrowLeft,
+  CheckCircle2,
   Edit,
+  Loader2,
   Package,
+  XCircle,
 } from "lucide-react";
 
-import { products } from "@/features/products/product.data";
+import { getProductByIdApi } from "@/lib/api/product.api";
+import { PermissionGate } from "@/lib/auth/permissions";
+import type { Product } from "@/features/products/product.types";
 
-interface ProductDetailsPageProps {
-  params: Promise<{
-    id: string;
-  }>;
-}
+export default function ProductDetailsPage() {
+  const params = useParams();
+  const id = params?.id as string;
 
-export default async function ProductDetailsPage({
-  params,
-}: ProductDetailsPageProps) {
-  const { id } = await params;
+  const [product, setProduct] = useState<Product | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const product = products.find((item) => item.id === Number(id));
+  useEffect(() => {
+    if (!id) return;
 
-  if (!product) {
-    notFound();
+    let mounted = true;
+    setIsLoading(true);
+    setError(null);
+
+    getProductByIdApi(id)
+      .then((res) => {
+        if (!mounted) return;
+        if (res.success && res.data) {
+          setProduct(res.data);
+        } else {
+          setError(res.message || "Product not found");
+        }
+      })
+      .catch((err: any) => {
+        if (!mounted) return;
+        setError(err.message || "Failed to load product details");
+      })
+      .finally(() => {
+        if (mounted) setIsLoading(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <div className="flex h-72 items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-[var(--muted)]">
+          <Loader2 size={32} className="animate-spin text-[var(--primary)]" />
+          <p className="text-sm font-medium">Loading product details...</p>
+        </div>
+      </div>
+    );
   }
+
+  if (error || !product) {
+    return (
+      <div className="mx-auto max-w-2xl rounded-2xl border border-[var(--border)] bg-white p-8 text-center shadow-xs">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-red-50 text-red-600">
+          <AlertCircle size={26} />
+        </div>
+        <h2 className="mt-4 text-lg font-semibold tracking-tight text-[var(--foreground)]">
+          Product Not Found
+        </h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          {error ||
+            "The product you are looking for does not exist or has been removed."}
+        </p>
+        <div className="mt-6 flex justify-center gap-3">
+          <Link
+            href="/products"
+            className="inline-flex h-9 items-center gap-2 rounded-lg bg-[var(--primary)] px-4 text-xs font-medium text-white transition hover:bg-[var(--primary-dark)]"
+          >
+            <ArrowLeft size={14} /> Back to Products
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const categoryName =
+    typeof product.category === "object" && product.category
+      ? product.category.name
+      : typeof product.category === "string"
+      ? product.category
+      : "Unassigned";
 
   return (
     <div className="space-y-6">
@@ -48,18 +120,20 @@ export default async function ProductDetailsPage({
           </p>
         </div>
 
-        <Link
-          href={`/products/edit/${product.id}`}
-          className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
-        >
-          <Edit size={16} />
-          Edit Product
-        </Link>
+        <PermissionGate module="products" action="edit">
+          <Link
+            href={`/products/edit/${product.id}`}
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--primary)] px-4 text-sm font-medium text-white! transition hover:bg-[var(--primary-dark)]"
+          >
+            <Edit size={16} />
+            Edit Product
+          </Link>
+        </PermissionGate>
       </div>
 
       {/* Main */}
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-        {/* Image */}
+        {/* Image Card */}
         <section className="rounded-2xl border border-[var(--border)] bg-white p-5 shadow-sm">
           <div className="relative aspect-square overflow-hidden rounded-2xl bg-[var(--muted-background)]">
             {product.imageUrl ? (
@@ -82,11 +156,9 @@ export default async function ProductDetailsPage({
           </div>
 
           <div className="mt-5">
-            <h2 className="text-lg font-semibold">
-              {product.name}
-            </h2>
+            <h2 className="text-lg font-semibold">{product.name}</h2>
 
-            <p className="mt-1 text-sm text-[var(--muted)]">
+            <p className="mt-1 font-mono text-sm text-[var(--muted)]">
               SKU: {product.sku}
             </p>
 
@@ -106,25 +178,13 @@ export default async function ProductDetailsPage({
             />
 
             <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              <InfoItem
-                label="Product Name"
-                value={product.name}
-              />
+              <InfoItem label="Product Name" value={product.name} />
 
-              <InfoItem
-                label="SKU"
-                value={product.sku}
-              />
+              <InfoItem label="SKU" value={product.sku} />
 
-              <InfoItem
-                label="Category"
-                value={product.category}
-              />
+              <InfoItem label="Category" value={categoryName} />
 
-              <InfoItem
-                label="Unit of Measure"
-                value={product.uom}
-              />
+              <InfoItem label="Unit of Measure" value={product.uom} />
 
               <InfoItem
                 label="Reorder Level"
@@ -133,11 +193,7 @@ export default async function ProductDetailsPage({
 
               <InfoItem
                 label="Status"
-                value={
-                  product.status === "ACTIVE"
-                    ? "Active"
-                    : "Inactive"
-                }
+                value={product.status === "ACTIVE" ? "Active" : "Inactive"}
               />
             </div>
           </section>
@@ -152,17 +208,17 @@ export default async function ProductDetailsPage({
             <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
               <InfoItem
                 label="Cost Price"
-                value={`$${product.costPrice.toFixed(2)}`}
+                value={`$${Number(product.costPrice || 0).toFixed(2)}`}
               />
 
               <InfoItem
                 label="Selling Price"
-                value={`$${product.sellingPrice.toFixed(2)}`}
+                value={`$${Number(product.sellingPrice || 0).toFixed(2)}`}
               />
 
               <InfoItem
                 label="Tax Rate"
-                value={`${product.taxRate.toFixed(2)}%`}
+                value={`${Number(product.taxRate || 0).toFixed(2)}%`}
               />
             </div>
           </section>
@@ -175,10 +231,7 @@ export default async function ProductDetailsPage({
             />
 
             <div className="mt-5 grid gap-5 sm:grid-cols-2">
-              <InfoItem
-                label="Current Stock"
-                value={String(product.stock)}
-              />
+              <InfoItem label="Current Stock" value={String(product.stock)} />
 
               <InfoItem
                 label="Reorder Level"
@@ -195,7 +248,7 @@ export default async function ProductDetailsPage({
             />
 
             <div className="mt-5 flex flex-wrap gap-2">
-              {product.salesChannels.length > 0 ? (
+              {product.salesChannels && product.salesChannels.length > 0 ? (
                 product.salesChannels.map((channel) => (
                   <span
                     key={channel}
@@ -225,14 +278,9 @@ function SectionTitle({
   description: string;
 }) {
   return (
-    <div>
-      <h2 className="text-base font-semibold">
-        {title}
-      </h2>
-
-      <p className="mt-1 text-sm text-[var(--muted)]">
-        {description}
-      </p>
+    <div className="border-b border-[var(--border-light)] pb-4">
+      <h3 className="text-sm font-semibold">{title}</h3>
+      <p className="mt-1 text-xs text-[var(--muted)]">{description}</p>
     </div>
   );
 }
@@ -246,13 +294,8 @@ function InfoItem({
 }) {
   return (
     <div>
-      <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted)]">
-        {label}
-      </p>
-
-      <p className="mt-1.5 text-sm font-medium text-[var(--foreground)]">
-        {value}
-      </p>
+      <p className="text-xs text-[var(--muted)]">{label}</p>
+      <p className="mt-1 text-sm font-medium">{value}</p>
     </div>
   );
 }
@@ -260,19 +303,24 @@ function InfoItem({
 function StatusBadge({
   status,
 }: {
-  status: "ACTIVE" | "INACTIVE";
+  status: Product["status"];
 }) {
-  const active = status === "ACTIVE";
+  const isActive = status === "ACTIVE";
 
   return (
     <span
-      className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
-        active
-          ? "bg-[#e7f5ef] text-[var(--primary)]"
-          : "bg-[var(--muted-background)] text-[var(--muted)]"
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        isActive
+          ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+          : "border border-zinc-200 bg-zinc-100 text-zinc-600"
       }`}
     >
-      {active ? "Active" : "Inactive"}
+      {isActive ? (
+        <CheckCircle2 size={12} className="text-emerald-500" />
+      ) : (
+        <XCircle size={12} className="text-zinc-400" />
+      )}
+      {isActive ? "Active" : "Inactive"}
     </span>
   );
 }
