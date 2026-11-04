@@ -37,7 +37,22 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({ email, password }),
     });
 
-    const data = await backendRes.json();
+    const responseText = await backendRes.text();
+    let data: any = {};
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            backendRes.status >= 500
+              ? "Backend API is currently initializing or unreachable. Please try again in a few moments."
+              : `Server response: ${responseText.substring(0, 120)}`,
+        },
+        { status: backendRes.status || 502 }
+      );
+    }
 
     if (!backendRes.ok || !data.success || !data.data?.token) {
       return NextResponse.json(
