@@ -224,7 +224,7 @@ export default function InsightsPage() {
           <div className="mt-6 h-72 w-full">
             {!isMounted ? (
               <div className="flex h-full items-center justify-center text-xs text-[var(--muted)]">Loading visual charts...</div>
-            ) : monthlyRevenueTrends.length === 0 ? (
+            ) : monthlyRevenueTrends.length === 0 || monthlyRevenueTrends.every((t) => (t.revenue || 0) === 0 && (t.cost || 0) === 0) ? (
               <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] text-center text-sm text-[var(--muted)]">
                 <BarChart3 size={28} className="text-[var(--muted)]/50" />
                 <p className="mt-2 font-medium text-[var(--foreground)]">No revenue trajectory data available yet</p>

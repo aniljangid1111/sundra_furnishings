@@ -170,9 +170,10 @@ export default function DashboardPage() {
         <div className="mt-6 h-[260px] w-full">
           {!isMounted ? (
             <div className="flex h-full items-center justify-center text-xs text-[var(--muted)]">Loading chart...</div>
-          ) : salesData.length === 0 ? (
+          ) : salesData.length === 0 || salesData.every((d) => d.sales === 0) ? (
             <div className="flex h-full flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border)] text-center text-sm text-[var(--muted)]">
-              <p className="font-medium">No revenue data available yet</p>
+              <FileText size={28} className="text-[var(--muted)]/50" />
+              <p className="mt-2 font-medium text-[var(--foreground)]">No revenue data available yet</p>
               <p className="mt-1 text-xs text-[var(--muted)]/80">
                 Revenue trends will plot automatically once sales invoices are issued.
               </p>
